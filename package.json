@@ -1,0 +1,39 @@
+{
+  "name": "travelxm-pdf-optimizer",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "serve:out": "npx --yes serve out -p 3211 -s",
+    "bench": "node --max-old-space-size=8192 scripts/bench.mjs",
+    "quality": "node scripts/quality.mjs",
+    "crop": "node scripts/crop.mjs",
+    "diagnose": "node --max-old-space-size=8192 scripts/diagnose.mjs",
+    "acceptance": "node scripts/acceptance.mjs",
+    "verify": "node --max-old-space-size=8192 scripts/verify.mjs",
+    "compare-ui": "node scripts/compare-ui.mjs",
+    "hydration": "node scripts/hydration.mjs"
+  },
+  "dependencies": {
+    "fflate": "^0.8.2",
+    "next": "^15.1.6",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^4.10.38",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@napi-rs/canvas": "^1.0.8",
+    "@tailwindcss/postcss": "^4.0.0",
+    "@types/node": "^22.10.7",
+    "@types/react": "^19.0.7",
+    "@types/react-dom": "^19.0.3",
+    "esbuild": "^0.28.2",
+    "puppeteer-core": "^24.43.1",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5.7.3"
+  }
+}

@@ -1,0 +1,14 @@
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+next-env.d.ts
+.DS_Store
+
+# Verification artifacts: screenshots, fixtures, downloads
+.check/
+*.optimized-*.pdf
+
+# Test documents. This tool exists to process real client files, and they land in this
+# folder — never let one become a commit. Add fixtures under a subfolder if you need them.
+/*.pdf
