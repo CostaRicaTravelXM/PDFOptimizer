@@ -9,7 +9,7 @@ export default function Home() {
 
       <section className="pt-8 pb-10 text-center sm:pt-14">
         <h1 className="font-display text-4xl leading-[1.08] font-semibold tracking-tight text-balance sm:text-6xl">
-          TravelXM Daily Tools
+          TravelXM Tools Suite
         </h1>
         <p className="text-muted mx-auto mt-5 max-w-xl text-base leading-relaxed text-pretty sm:text-lg">
           The small jobs that come up every day, done properly — pick one to get started.

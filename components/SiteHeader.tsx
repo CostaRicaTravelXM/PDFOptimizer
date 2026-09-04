@@ -23,7 +23,7 @@ export function SiteHeader({ current, children }: Props) {
         <Link
           href="/"
           className="flex shrink-0 items-center gap-2.5"
-          aria-label="TravelXM Daily Tools home"
+          aria-label="TravelXM Tools Suite home"
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/logotxm.png" alt="TravelXM" className="size-9 object-contain" />

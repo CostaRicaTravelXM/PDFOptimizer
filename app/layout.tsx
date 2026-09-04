@@ -70,7 +70,7 @@ const caveat = Caveat({
 });
 
 export const metadata: Metadata = {
-  title: { default: 'TravelXM Daily Tools', template: '%s — TravelXM Daily Tools' },
+  title: { default: 'TravelXM Tools Suite', template: '%s — TravelXM Tools Suite' },
   description: 'The small jobs that come up every day, done properly.',
   icons: { icon: '/logotxm.png' },
 };
