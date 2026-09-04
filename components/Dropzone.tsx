@@ -6,6 +6,14 @@ interface Props {
   onFiles: (files: File[]) => void;
   /** Shrinks to a slim bar once there is a queue to look at instead. */
   compact: boolean;
+  /** File input filter. Drops are not filtered — the caller validates what it receives. */
+  accept?: string;
+  multiple?: boolean;
+  /** Wording, so a second tool can borrow the control without borrowing "PDF". */
+  label?: string;
+  idleTitle?: string;
+  compactTitle?: string;
+  hint?: React.ReactNode;
 }
 
 /**
@@ -15,7 +23,16 @@ interface Props {
  * need. Paste works too, because "copy the file, paste it here" is how a lot of non-technical
  * users move things around.
  */
-export function Dropzone({ onFiles, compact }: Props) {
+export function Dropzone({
+  onFiles,
+  compact,
+  accept: acceptAttr = 'application/pdf,.pdf',
+  multiple = true,
+  label = 'Choose PDF files to make smaller',
+  idleTitle = 'Drop your PDFs here',
+  compactTitle = 'Add more PDFs',
+  hint,
+}: Props) {
   const [dragging, setDragging] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const depth = useRef(0);
@@ -72,8 +89,8 @@ export function Dropzone({ onFiles, compact }: Props) {
       <input
         ref={input}
         type="file"
-        accept="application/pdf,.pdf"
-        multiple
+        accept={acceptAttr}
+        multiple={multiple}
         className="sr-only"
         tabIndex={-1}
         onChange={(e) => {
@@ -85,7 +102,7 @@ export function Dropzone({ onFiles, compact }: Props) {
       <button
         type="button"
         onClick={open}
-        aria-label="Choose PDF files to make smaller"
+        aria-label={label}
         className={[
           'glass-card group relative block w-full cursor-pointer overflow-hidden rounded-3xl',
           'text-center transition-all duration-300',
@@ -134,13 +151,23 @@ export function Dropzone({ onFiles, compact }: Props) {
               compact ? 'text-xl' : 'text-3xl sm:text-4xl',
             ].join(' ')}
           >
-            {dragging ? 'Drop them anywhere' : compact ? 'Add more PDFs' : 'Drop your PDFs here'}
+            {dragging
+              ? multiple
+                ? 'Drop them anywhere'
+                : 'Drop it anywhere'
+              : compact
+                ? compactTitle
+                : idleTitle}
           </span>
 
           {!compact && (
             <span className="text-muted max-w-md text-[0.95rem] leading-relaxed">
-              or <span className="text-accent-deep font-semibold underline decoration-accent/40 underline-offset-4">browse your files</span>.
-              They start shrinking straight away.
+              {hint ?? (
+                <>
+                  or <span className="text-accent-deep decoration-accent/40 font-semibold underline underline-offset-4">browse your files</span>.
+                  They start shrinking straight away.
+                </>
+              )}
             </span>
           )}
         </span>

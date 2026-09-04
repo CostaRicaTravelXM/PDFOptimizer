@@ -1,10 +1,23 @@
-# TravelXM PDF Optimizer
+# TravelXM Daily Tools
+
+A small suite of tools for the jobs that come up every day.
+
+| Tool | Route | What it does |
+|---|---|---|
+| **PDF Optimizer** | `/tools/pdf-optimizer` | Shrinks oversized PDFs so they can be emailed. Entirely in the browser. |
+| **Email Image Hosting** | `/tools/email-images` | Takes an email-builder `.zip`, uploads the images to Cloudflare R2, and rewrites the HTML to point at them. |
+
+Adding a tool is one entry in `lib/tools.ts` plus a route under `app/tools/`.
+
+---
+
+## PDF Optimizer
 
 Drop oversized PDFs in, get back files small enough to email. Built for itineraries and
 proposals exported from design tools, which routinely come out at 100 MB or more.
 
-Everything runs in the browser. Nothing is uploaded, there is no backend, and client
-documents never leave the machine they were opened on.
+Everything runs in the browser. Nothing is uploaded, and client documents never leave the
+machine they were opened on.
 
 **Measured on a reference itinerary** — a 13-page Canva export carrying 183 images and
 348 megapixels, most of it stored uncompressed:
@@ -25,8 +38,12 @@ indistinguishable.
 ```bash
 npm install
 npm run dev          # http://localhost:3000
-npm run build        # static export to ./out — deploy anywhere, no server needed
+npm run build        # production build; deploys to Vercel as-is
+npm run typecheck
 ```
+
+The PDF Optimizer needs no configuration. The Email Image Hosting tool needs the R2
+credentials below — without them it says so plainly rather than failing at upload time.
 
 ## How it works
 
@@ -134,3 +151,93 @@ Design tokens, fonts and component styles are taken from travelxm.com's live sty
 the tool reads as part of the same product. Colours are defined once in `app/globals.css`;
 the four families (DM Sans, Cormorant Garamond, Playfair Display, Caveat) are the same ones
 the site loads.
+
+---
+
+## Email Image Hosting
+
+Email builders (Beefree, Stripo, Mailchimp) export a `.zip` holding one HTML file and an
+`images/` folder, with the images referenced by relative paths. That only works while the
+folder travels with the HTML — paste the HTML into a sending platform on its own and every
+image breaks.
+
+This tool optimizes the images, uploads them to a Cloudflare R2 bucket, and rewrites every
+reference to the public URL, then offers the HTML on its own or the whole archive with only
+the HTML changed.
+
+### Image optimization
+
+Before upload, each image is re-encoded to WebP and capped to a maximum edge (1200px by
+default — email bodies are ~600px wide, so that covers a retina display). On the reference
+export this takes 1.30 MB down to 0.76 MB, 42% smaller, with no visible difference.
+
+Both are optional. Turn WebP off to keep the original formats and only resize.
+
+> **WebP and Outlook.** Outlook for Windows uses the Word rendering engine and cannot display
+> WebP — recipients on it see a broken image. Gmail, Apple Mail and Outlook.com are all fine.
+> If your list skews corporate, turn WebP off and let the resize do the work.
+
+SVG and GIF are never converted: SVG is vector, and a canvas only sees a GIF's first frame,
+so converting would silently drop the animation. Anything the browser cannot decode, or that
+comes out larger as WebP, is uploaded unchanged with a note saying why.
+
+### How the upload works
+
+The `.zip` is never sent to the server. The browser unpacks it, asks `/api/r2/presign` for
+short-lived signed `PUT` URLs, and uploads each image straight to R2. The bucket credentials
+stay server-side, and the file bytes never pass through the serverless function — which
+matters, because Vercel caps a function request body at 4.5 MB and these archives are bigger
+than that.
+
+Rewriting is by pattern over attribute values (`src`, `href`, `srcset`, CSS `url(...)`), and
+a value is only substituted when it resolves to a file that was actually in the archive. That
+is what keeps `mailto:`, `tel:`, `#`, absolute URLs and `{{ merge_tags }}` untouched: none of
+them can ever resolve to an archive entry.
+
+### Cloudflare R2 setup
+
+1. **Create the bucket.** Cloudflare dashboard → R2 → *Create bucket*, e.g.
+   `travelxm-email-assets`.
+
+2. **Make it publicly readable.** Bucket → Settings → Public access → enable the **r2.dev
+   subdomain**, which gives you `https://pub-<hash>.r2.dev`. For production, prefer
+   *Custom Domain* (e.g. `assets.travelxm.com`) — r2.dev is rate-limited and not meant for
+   production traffic. Email images must be publicly readable or recipients see nothing.
+
+3. **Allow the browser to upload.** Bucket → Settings → CORS policy:
+
+   ```json
+   [
+     {
+       "AllowedOrigins": ["https://your-app.vercel.app", "http://localhost:3000"],
+       "AllowedMethods": ["PUT", "GET", "HEAD"],
+       "AllowedHeaders": ["*"],
+       "ExposeHeaders": ["ETag"],
+       "MaxAgeSeconds": 3600
+     }
+   ]
+   ```
+
+   Miss this and every upload fails with no error body — the tool says as much when it
+   happens.
+
+4. **Create an API token.** R2 → Manage API Tokens → *Create API token*, permission
+   **Object Read & Write**, scoped to that bucket. Keep the Access Key ID and Secret.
+
+5. **Set the environment variables** in `.env.local` for development and in Vercel →
+   Settings → Environment Variables for production. See `.env.example`:
+
+   | Variable | Example |
+   |---|---|
+   | `R2_ACCOUNT_ID` | `a1b2c3…` (Cloudflare account ID) |
+   | `R2_ACCESS_KEY_ID` | from step 4 |
+   | `R2_SECRET_ACCESS_KEY` | from step 4 |
+   | `R2_BUCKET` | `travelxm-email-assets` |
+   | `R2_PUBLIC_BASE_URL` | `https://pub-xxxx.r2.dev` (no trailing slash) |
+   | `R2_ENDPOINT` | optional; only for jurisdiction-specific buckets |
+
+### Where files land
+
+Under a folder named after the uploaded `.zip`, keeping the original paths:
+`luxury-costa-rica/images/<name>.jpg`. The folder is an editable field in the UI, and
+uploading the same name again replaces what is there.

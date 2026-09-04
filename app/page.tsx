@@ -1,182 +1,83 @@
-'use client';
-
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { ComparePreview } from '@/components/ComparePreview';
-import { Dropzone } from '@/components/Dropzone';
-import { FileRow } from '@/components/FileRow';
-import { QualityMenu } from '@/components/QualityMenu';
-import { humanBytes, percentSaved } from '@/lib/format';
-import type { Job } from '@/lib/types';
-import { usePdfQueue } from '@/lib/usePdfQueue';
-import { zipFiles } from '@/lib/zip';
+import Link from 'next/link';
+import { SiteHeader } from '@/components/SiteHeader';
+import { TOOLS } from '@/lib/tools';
 
 export default function Home() {
-  const { jobs, add, remove, clear, rerun, preset, setPreset, target, setTarget, busy } =
-    usePdfQueue();
-  const [comparing, setComparing] = useState<Job | null>(null);
-  const [zipping, setZipping] = useState(false);
-
-  const done = jobs.filter((j) => j.status === 'done' && j.result);
-  const totals = useMemo(
-    () => ({
-      before: done.reduce((s, j) => s + j.originalSize, 0),
-      after: done.reduce((s, j) => s + (j.result?.size ?? 0), 0),
-    }),
-    [done],
-  );
-
-  // Changing the quality re-runs the queue, so the choice is felt immediately rather than
-  // applying only to whatever is dropped next.
-  const firstRender = useRef(true);
-  useEffect(() => {
-    if (firstRender.current) {
-      firstRender.current = false;
-      return;
-    }
-    rerun();
-  }, [preset, target, rerun]);
-
-  const downloadAll = async () => {
-    setZipping(true);
-    try {
-      const blob = await zipFiles(done.map((j) => ({ name: j.name, blob: j.result!.blob })));
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'optimized-pdfs.zip';
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 10_000);
-    } finally {
-      setZipping(false);
-    }
-  };
-
-  const hasJobs = jobs.length > 0;
-
   return (
-    <div className="mx-auto flex min-h-dvh max-w-4xl flex-col px-4 pb-32 sm:px-6">
-      <header className="flex items-center justify-between gap-4 py-6">
-        <a
-          href="https://travelxm.com"
-          className="flex items-center gap-2.5"
-          aria-label="TravelXM home"
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logotxm.png" alt="TravelXM" className="size-9 object-contain" />
-          <span className="font-display text-lg font-semibold tracking-tight">TravelXM</span>
-        </a>
-        {hasJobs && (
-          <QualityMenu
-            preset={preset}
-            target={target}
-            onPreset={setPreset}
-            onTarget={setTarget}
-            disabled={busy}
-          />
-        )}
-      </header>
+    <div className="mx-auto flex min-h-dvh max-w-4xl flex-col px-4 pb-16 sm:px-6">
+      <SiteHeader />
 
-      {!hasJobs && (
-        <section className="pt-8 pb-8 text-center sm:pt-14">
-          <h1 className="font-display text-4xl leading-[1.08] font-semibold tracking-tight text-balance sm:text-6xl">
-            Make your PDFs small
-            <br className="hidden sm:block" /> enough to send.
-          </h1>
-          <p className="text-muted mx-auto mt-5 max-w-xl text-base leading-relaxed text-pretty sm:text-lg">
-            Drop your files below. They come back looking the same, just lighter — and
-            nothing ever leaves your computer.
-          </p>
-        </section>
-      )}
+      <section className="pt-8 pb-10 text-center sm:pt-14">
+        <h1 className="font-display text-4xl leading-[1.08] font-semibold tracking-tight text-balance sm:text-6xl">
+          TravelXM Daily Tools
+        </h1>
+        <p className="text-muted mx-auto mt-5 max-w-xl text-base leading-relaxed text-pretty sm:text-lg">
+          The small jobs that come up every day, done properly — pick one to get started.
+        </p>
+      </section>
 
-      <Dropzone onFiles={add} compact={hasJobs} />
-
-      {hasJobs && (
-        <section className="mt-6" aria-label="Your files">
-          <div className="mb-3 flex items-center justify-between gap-3 px-1">
-            <h2 className="text-muted text-sm font-semibold tracking-wide uppercase">
-              {jobs.length} {jobs.length === 1 ? 'file' : 'files'}
-            </h2>
-            <button
-              type="button"
-              onClick={clear}
-              className="text-muted hover:text-coral text-sm transition"
+      <ul className="grid gap-4 sm:grid-cols-2">
+        {TOOLS.map((tool, i) => (
+          <li key={tool.slug}>
+            <Link
+              href={tool.href}
+              className="glass-card animate-in group hover:border-accent/50 flex h-full flex-col rounded-3xl px-6 py-7 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_25px_50px_-12px_#14313f24]"
+              style={{ animationDelay: `${i * 70}ms` }}
             >
-              Clear all
-            </button>
-          </div>
-
-          <ul className="flex flex-col gap-2.5">
-            {jobs.map((job) => (
-              <FileRow key={job.id} job={job} onRemove={remove} onCompare={setComparing} />
-            ))}
-          </ul>
-        </section>
-      )}
-
-      {/* Progress narrated for screen readers, which cannot watch a bar move. */}
-      <p aria-live="polite" className="sr-only">
-        {busy
-          ? `Working. ${done.length} of ${jobs.length} files finished.`
-          : done.length > 0
-            ? `All done. ${done.length} files ready to download.`
-            : ''}
-      </p>
-
-      {!hasJobs && (
-        <footer className="text-muted mt-auto pt-14 pb-6 text-center text-sm">
-          <p className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
-            <span className="inline-flex items-center gap-1.5">
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="text-accent-deep size-4"
+              <span
                 aria-hidden
+                className="flex size-12 items-center justify-center rounded-full transition-transform duration-300 group-hover:scale-105"
+                style={{ background: 'linear-gradient(135deg, #72c049, #4e9a33)' }}
               >
-                <rect width="18" height="11" x="3" y="11" rx="2" />
-                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-              </svg>
-              Everything happens on this device.
-            </span>
-            <span>No uploads, no accounts, no waiting.</span>
-          </p>
-        </footer>
-      )}
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="#14313f"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="size-6"
+                >
+                  {tool.icon.map((d) => (
+                    <path key={d} d={d} />
+                  ))}
+                </svg>
+              </span>
 
-      {done.length > 1 && (
-        <div className="fixed inset-x-0 bottom-0 z-40 px-4 pb-4 sm:px-6 sm:pb-6">
-          <div className="glass-card-solid animate-in mx-auto flex max-w-4xl items-center justify-between gap-4 rounded-2xl px-4 py-3 shadow-[0_25px_50px_-12px_#14313f38] sm:px-5">
-            <div className="min-w-0">
-              <p className="text-sm font-semibold">
-                {done.length} files ready
-                <span className="text-accent-deep">
-                  {' · '}
-                  {percentSaved(totals.before, totals.after)}% smaller
+              <h2 className="font-display mt-4 text-2xl font-semibold tracking-tight">
+                {tool.name}
+              </h2>
+              <p className="text-muted mt-1.5 text-[0.95rem] leading-relaxed">{tool.blurb}</p>
+
+              <span className="mt-5 flex items-center justify-between gap-3 pt-1">
+                <span className="text-muted/80 text-xs font-semibold tracking-wide uppercase">
+                  {tool.note}
                 </span>
-              </p>
-              <p className="text-muted truncate text-sm tabular-nums">
-                {humanBytes(totals.before)} → {humanBytes(totals.after)}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={downloadAll}
-              disabled={zipping}
-              className="btn-primary shrink-0 px-5 py-2.5 text-sm"
-            >
-              {zipping ? 'Packing…' : 'Download all'}
-            </button>
-          </div>
-        </div>
-      )}
+                <span className="text-accent-deep inline-flex items-center gap-1 text-sm font-semibold">
+                  Open
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="size-4 transition-transform duration-300 group-hover:translate-x-0.5"
+                    aria-hidden
+                  >
+                    <path d="M5 12h14" />
+                    <path d="m12 5 7 7-7 7" />
+                  </svg>
+                </span>
+              </span>
+            </Link>
+          </li>
+        ))}
+      </ul>
 
-      {comparing && (
-        <ComparePreview job={comparing} onClose={() => setComparing(null)} />
-      )}
+      <footer className="text-muted mt-auto pt-14 pb-6 text-center text-sm">
+        <p>Built for the TravelXM team.</p>
+      </footer>
     </div>
   );
 }

@@ -70,9 +70,8 @@ const caveat = Caveat({
 });
 
 export const metadata: Metadata = {
-  title: 'PDF Optimizer — TravelXM',
-  description:
-    'Shrink oversized PDFs so they can be emailed, without losing quality. Files never leave your computer.',
+  title: { default: 'TravelXM Daily Tools', template: '%s — TravelXM Daily Tools' },
+  description: 'The small jobs that come up every day, done properly.',
   icons: { icon: '/logotxm.png' },
 };
 

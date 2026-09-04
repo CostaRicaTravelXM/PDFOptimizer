@@ -12,3 +12,10 @@ next-env.d.ts
 # Test documents. This tool exists to process real client files, and they land in this
 # folder — never let one become a commit. Add fixtures under a subfolder if you need them.
 /*.pdf
+
+# Local secrets: R2 credentials.
+.env
+.env*.local
+
+# Real client exports used to test the email tool. They carry live contact details.
+/fixtures/
