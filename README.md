@@ -6,6 +6,7 @@ A small suite of tools for the jobs that come up every day.
 |---|---|---|
 | **PDF Optimizer** | `/tools/pdf-optimizer` | Shrinks oversized PDFs so they can be emailed. Entirely in the browser. |
 | **Email Image Hosting** | `/tools/email-images` | Takes an email-builder `.zip`, uploads the images to Cloudflare R2, and rewrites the HTML to point at them. |
+| **AI Itinerary Presentation** | `/tools/itinerary-presentation` | Turns an itinerary PDF into an editable Canva deck: the slides are planned and written by Claude, photos come from the approved library or Pexels, and the deck is built as PowerPoint and imported into Canva. |
 
 Adding a tool is one entry in `lib/tools.ts` plus a route under `app/tools/`.
 
@@ -241,3 +242,133 @@ them can ever resolve to an archive entry.
 Under a folder named after the uploaded `.zip`, keeping the original paths:
 `luxury-costa-rica/images/<name>.jpg`. The folder is an editable field in the UI, and
 uploading the same name again replaces what is there.
+
+---
+
+## AI Itinerary Presentation
+
+Drop an itinerary brief (PDF), choose **Minimal** (agents, operations) or **Immersive**
+(clients), fill in a title and destination, and get back an editable Canva design — or the
+PowerPoint file when Canva cannot import it. The business rules behind it (styles, asset
+policy, slide types) live in the project's business plan; this section covers how the pieces
+fit and how to run them.
+
+### How it fits together
+
+```
+browser ── reads the PDF text (pdf.js) ──┐
+   │                                     │
+   ├── PUT source.pdf ──► Cloudflare R2  │
+   │                                     ▼
+   └── POST /api/presentations/jobs ──► job.json (queued) ──► n8n webhook (202)
+                                                                 │
+   GET /api/presentations/jobs/<id>  ◄── polls every 3 s         │ plans the slides (Claude),
+                                                                 │ resolves photos (WorkDrive → Pexels),
+   PATCH /api/presentations/jobs/<id> ◄── status updates ────────┤
+   POST  /api/presentations/compile  ◄── manifest + image URLs ──┤ builds the PPTX (this app),
+                                                                 │ imports it into Canva,
+   PATCH … {status:"done", canva:{editUrl}} ◄────────────────────┘ reports the link
+```
+
+Three decisions shape the design:
+
+- **The PDF never passes through a server function.** The platform caps request bodies at
+  4.5 MB and briefs run past 100 MB, so the browser extracts the text with pdf.js and PUTs
+  the file straight to R2 with a signed URL, in parallel.
+- **This app is the only writer of the job record.** n8n reports progress through the PATCH
+  route rather than touching the bucket, so there is one merge policy, one `updatedAt`, and
+  the workflow needs no bucket credentials.
+- **The compiler lives here, not in n8n.** n8n Cloud cannot run PptxGenJS. The compile route
+  takes a slide manifest plus resolved image URLs, renders editable slides from a small
+  library of layout primitives, writes the `.pptx` to R2 and returns its URL.
+
+### The compiler
+
+`lib/server/presentations/` turns a manifest into a deck deterministically: the planner
+chooses a layout primitive and writes the copy; the compiler owns every coordinate, font
+size and crop.
+
+| Primitive | Used for |
+|---|---|
+| `full_bleed_hero_with_left_copy` | cover, destination intros |
+| `split_photo_text` | itinerary days, overview |
+| `asymmetric_two_photo_editorial` | hotel and experience showcases |
+| `timeline_route` | the route at a glance (up to 7 stops) |
+| `information_cards` | inclusions, logistics (cards or included/excluded lists) |
+| `hotel_comparison` | up to three accommodation options |
+| `closing_story` | the last slide with contact details |
+
+Worth knowing:
+
+- Text fitting is done here, not by PowerPoint: Canva's importer does not shrink text, so
+  the compiler predicts wrapping from average glyph widths, steps sizes down to a floor, and
+  finally shortens on a word boundary and says so in a warning.
+- Photos are cropped with PowerPoint's own source rectangle (`sizing: cover`), so the whole
+  photograph survives into Canva and can be re-framed there.
+- A named hotel with no approved photo gets a branded shape composition, never a stock
+  photo of some other hotel. Gradient scrims are single transparent PNG layers because
+  PptxGenJS has no gradient fills.
+- Brand tokens (colours, Cormorant Garamond + DM Sans) are in `brand.ts`; the logo and
+  scrims are embedded as base64 by `npm run presentations:embed-assets`. Drop a
+  `public/logotxm-white.png` and re-run it to get a white logo on dark slides.
+
+### Environment variables
+
+| Variable | Purpose |
+|---|---|
+| `N8N_PRESENTATION_WEBHOOK_URL` | Production URL of the n8n webhook that runs a job |
+| `N8N_SHARED_SECRET` | Sent to n8n as `x-tools-secret`; the webhook rejects anything else |
+| `PRESENTATIONS_COMPILE_SECRET` | n8n sends it back as `Authorization: Bearer …` on PATCH and compile |
+| `TOOLS_ACCESS_CODE` | Optional. When set, the page asks for it once per browser before starting a job |
+
+Plus the R2 variables above. The bucket's CORS policy must allow `PUT` from the site's
+origin (and `http://localhost:3000` for development) — the same rule the image tool needs.
+
+### Job record and contract
+
+A job is `presentations/jobs/<id>/job.json` in the bucket, next to `source.pdf`,
+`text.txt`, `manifest.json` and the compiled `.pptx`. The id is `YYYYMMDD-HHMMSS-xxxxxx`, so
+a listing comes back in order. The shape (`JobRecord`, `JobPatch`, the manifest and the
+compile request) is defined once in `lib/presentations/types.ts` and
+`lib/presentations/manifest.ts`; the n8n workflows are built against exactly that.
+
+| Call | Auth | Body → response |
+|---|---|---|
+| `POST /api/presentations/upload-url` | access code (optional) | `{name,size,contentType}` → `{jobId,pdfKey,pdfUrl,uploadUrl}` |
+| `POST /api/presentations/jobs` | access code (optional) | form fields + `jobId,pdfKey,pageCount,textChars,textLow,text`, or `{retryOf}` → `{job}` |
+| `GET /api/presentations/jobs?limit=` | – | `{jobs}` (summaries; never the PDF URL) |
+| `GET /api/presentations/jobs/<id>` | – | the record |
+| `PATCH /api/presentations/jobs/<id>` | bearer | partial `{status,step,manifestKey,pptxKey,pptxUrl,canva,warnings,assets,meta,error}` → merged record |
+| `POST /api/presentations/compile` | bearer | `{jobId,manifest,assets}` → `{pptxKey,pptxUrl,slideCount,warnings}`; `400 {issues}` if the manifest is unusable |
+
+The webhook n8n receives is `{jobId, …input, textKey, text}` and must answer `202` at once.
+A Canva failure ends the job as `done` without `canva`, and the page offers the PowerPoint.
+
+### Running it locally
+
+```
+npm run presentations:fixture      # builds .check/fixture-{immersive,minimal}.pptx from a manifest
+                                   # that exercises every layout, a placeholder, a rejected
+                                   # image and an over-long title. No server needed.
+npm run presentations:mock-n8n     # a stand-in for the workflow on http://localhost:5678
+npm run dev                        # with N8N_PRESENTATION_WEBHOOK_URL pointed at the mock
+```
+
+The fixture decks open in PowerPoint; with PowerPoint installed, exporting them to PNG is a
+quick way to eyeball every slide. Two caveats when checking on a machine without the brand
+fonts: PowerPoint substitutes them, and its PNG export occasionally repeats a word at a line
+break with a substituted font. The file itself has each word once, and Canva has both fonts.
+
+The mock accepts the webhook exactly as n8n will, walks the job through every status with
+PATCH calls, has the app compile the fixture manifest restyled to the job's title and
+style, and finishes without Canva. `--fail-at=compiling` (or any status) exercises the
+failure path.
+
+### Before real use
+
+- Set `TOOLS_ACCESS_CODE`: there is no login, and a job spends Claude, Pexels and Canva
+  quota. The per-connection rate limit is a deterrent only.
+- The bucket is public, so briefs sit at unlisted URLs. Add an R2 lifecycle rule that
+  deletes `presentations/jobs/*/source.pdf` and `text.txt` after a week.
+- `maxDuration` on the compile route is 60 s (the Hobby ceiling). Raise it in the route on
+  a Pro plan if large immersive decks need it.

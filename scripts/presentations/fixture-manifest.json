@@ -1,0 +1,153 @@
+{
+  "presentation": {
+    "title": "Caribbean Coast Adventure",
+    "subtitle": "September 18–21, 2026 · 4 Days / 3 Nights",
+    "style": "immersive",
+    "audience": "client",
+    "language": "en"
+  },
+  "brand": {
+    "palette": ["#0C86A0", "#396B1F", "#F7F4EC", "#FFFFFF", "#123456"],
+    "title_font": "Cormorant Garamond",
+    "body_font": "DM Sans"
+  },
+  "slides": [
+    {
+      "id": "cover",
+      "type": "cover",
+      "layout": "full_bleed_hero_with_left_copy",
+      "copy": {
+        "eyebrow": "Costa Rica",
+        "title": "Caribbean Coast Adventure",
+        "subtitle": "Four days of rainforest, beaches and Caribbean rhythm on the wild south coast."
+      },
+      "assets": [
+        { "purpose": "background", "source": "pexels", "subject_kind": "generic_scene", "fallback_query": "Puerto Viejo Costa Rica Caribbean beach landscape" },
+        { "purpose": "decorative_element", "source": "placeholder", "subject_kind": "brand_element" }
+      ],
+      "layout_constraints": { "title_max_chars": 42 }
+    },
+    {
+      "id": "overview",
+      "type": "overview",
+      "layout": "split_photo_text",
+      "copy": {
+        "eyebrow": "The journey",
+        "title": "From the capital to the Caribbean in one scenic hop",
+        "body": "A short domestic flight trades San José's traffic for Limón's palms. From there the road hugs the coast to Puerto Viejo, where the jungle meets the sea and the pace of life slows to reggae time.",
+        "meta": ["Domestic flight SJO → LIO", "Private transfers throughout", "3 nights at a jungle-beach lodge", "Guided wildlife walk", "Chocolate farm visit"]
+      },
+      "assets": [
+        { "purpose": "primary_photo", "source": "pexels", "subject_kind": "generic_scene", "fallback_query": "Costa Rica tropical aerial coastline" }
+      ]
+    },
+    {
+      "id": "route",
+      "type": "route",
+      "layout": "timeline_route",
+      "theme": "dark",
+      "copy": {
+        "eyebrow": "Route",
+        "title": "Your route at a glance",
+        "subtitle": "Six stops, one unforgettable coast.",
+        "stops": [
+          { "label": "San José", "sublabel": "Arrival", "date": "Sep 18" },
+          { "label": "Limón", "sublabel": "Scenic flight", "date": "Sep 18" },
+          { "label": "Cahuita", "sublabel": "National park", "date": "Sep 19" },
+          { "label": "Puerto Viejo", "sublabel": "Beach town", "date": "Sep 19–20" },
+          { "label": "Manzanillo", "sublabel": "Wildlife refuge", "date": "Sep 20" },
+          { "label": "San José", "sublabel": "Departure", "date": "Sep 21" }
+        ]
+      },
+      "assets": [
+        { "purpose": "background", "source": "pexels", "subject_kind": "generic_scene", "fallback_query": "Costa Rica rainforest canopy aerial" }
+      ]
+    },
+    {
+      "id": "day_01",
+      "type": "itinerary_day",
+      "layout": "split_photo_text",
+      "copy": {
+        "day_label": "Day one",
+        "title": "Arrival and scenic flight to Limón",
+        "body": "Arrive at Juan Santamaría International Airport, where your driver is waiting. A 35-minute flight over the central mountains brings the Caribbean into view before you land in Limón and continue by road to your lodge.",
+        "meta": ["Domestic flight", "Private arrival transfer", "Overnight: Jungle-beach lodge"]
+      },
+      "assets": [
+        { "purpose": "primary_photo", "source": "pexels", "subject_kind": "generic_scene", "fallback_query": "small airplane tropical coast aerial" }
+      ]
+    },
+    {
+      "id": "day_02",
+      "type": "itinerary_day",
+      "layout": "asymmetric_two_photo_editorial",
+      "copy": {
+        "day_label": "Day two",
+        "title": "Cahuita's coral coast and a sloth or two",
+        "body": "A guided walk along the park's beachside trail: howler monkeys overhead, sloths in the cecropia trees, and a swim at a white-sand cove to finish.",
+        "meta": ["Guided national park walk", "Snorkelling weather permitting", "Lunch at a Caribbean soda"]
+      },
+      "assets": [
+        { "purpose": "primary_photo", "source": "pexels", "subject_kind": "generic_scene", "fallback_query": "sloth rainforest Costa Rica" },
+        { "purpose": "secondary_photo", "source": "pexels", "subject_kind": "generic_scene", "fallback_query": "white sand cove palm trees" }
+      ]
+    },
+    {
+      "id": "hotels",
+      "type": "accommodation",
+      "layout": "hotel_comparison",
+      "copy": {
+        "title": "Where you will stay",
+        "options": [
+          { "name": "Shawandha Lodge", "location": "Playa Chiquita", "room": "Tepee bungalow", "notes": "Thatched bungalows set in tropical gardens a short walk from the beach. Breakfast included.", "price": "From $210 / night" },
+          { "name": "Le Caméléon", "location": "Cocles", "room": "Deluxe room", "notes": "Contemporary boutique hotel with a beach club across the road.", "price": "From $290 / night" },
+          { "name": "Hotel Banana Azul", "location": "Playa Negra", "room": "Ocean view", "notes": "Adults-only beachfront hotel with a famously good breakfast.", "price": "From $180 / night" }
+        ]
+      },
+      "assets": [
+        { "purpose": "primary_photo", "source": "placeholder", "subject_kind": "named_property" },
+        { "purpose": "secondary_photo", "source": "placeholder", "subject_kind": "named_property" },
+        { "purpose": "tertiary_photo", "source": "placeholder", "subject_kind": "named_property" }
+      ]
+    },
+    {
+      "id": "inclusions",
+      "type": "inclusions",
+      "layout": "information_cards",
+      "copy": {
+        "title": "What is included",
+        "subtitle": "Everything you need for the coast, nothing you do not.",
+        "included": ["3 nights accommodation with breakfast", "Domestic flight San José – Limón", "All private ground transfers", "Guided Cahuita National Park walk", "Chocolate farm tour with tasting", "Bilingual guide throughout"],
+        "excluded": ["International flights", "Travel insurance", "Meals not mentioned", "Gratuities"]
+      }
+    },
+    {
+      "id": "long_title",
+      "type": "itinerary_day",
+      "layout": "split_photo_text",
+      "copy": {
+        "day_label": "Day three",
+        "title": "An intentionally very long title that runs well past the character limit so the fitting code has to step the size down and finally shorten it",
+        "body": "Morning at leisure. In the afternoon, a visit to a family-run cacao farm to follow the bean from tree to bar, with a tasting at the end.",
+        "meta": ["Cacao farm visit", "Free afternoon"]
+      },
+      "assets": [
+        { "purpose": "primary_photo", "source": "pexels", "subject_kind": "generic_scene", "fallback_query": "cacao pods tree" }
+      ]
+    },
+    {
+      "id": "closing",
+      "type": "closing",
+      "layout": "closing_story",
+      "copy": {
+        "title": "Ready when you are",
+        "body": "Dates, hotels and activities can all be tailored. Tell us what would make this trip yours.",
+        "cta": "Book this itinerary",
+        "contact": { "name": "TravelXM Reservations", "email": "reservations@travelxm.com", "phone": "+506 8888 0000", "website": "travelxm.com" }
+      },
+      "assets": [
+        { "purpose": "background", "source": "pexels", "subject_kind": "generic_scene", "fallback_query": "Caribbean sunset palm silhouette" }
+      ]
+    }
+  ]
+}

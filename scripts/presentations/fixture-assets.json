@@ -1,0 +1,13 @@
+{
+  "cover:background": { "url": "https://picsum.photos/id/1011/1880/1253.jpg", "source": "pexels", "width": 1880, "height": 1253, "credit": "Photo by Picsum (fixture)" },
+  "overview:primary_photo": { "url": "https://picsum.photos/id/1015/1880/1253.jpg", "source": "pexels", "width": 1880, "height": 1253, "credit": "Photo by Picsum (fixture)" },
+  "route:background": { "url": "https://picsum.photos/id/1018/1880/1253.jpg", "source": "pexels", "width": 1880, "height": 1253, "credit": "Photo by Picsum (fixture)" },
+  "day_01:primary_photo": { "url": "https://picsum.photos/id/1036/1400/1400.jpg", "source": "pexels", "width": 1400, "height": 1400, "credit": "Photo by Picsum (fixture)" },
+  "day_02:primary_photo": { "url": "https://picsum.photos/id/1043/1600/1067.jpg", "source": "pexels", "width": 1600, "height": 1067, "credit": "Photo by Picsum (fixture)" },
+  "day_02:secondary_photo": { "url": "https://www.gstatic.com/webp/gallery/1.webp", "source": "pexels", "width": 550, "height": 368, "credit": "WebP that must be rejected" },
+  "hotels:primary_photo": { "url": "", "source": "placeholder" },
+  "hotels:secondary_photo": { "url": "", "source": "placeholder" },
+  "hotels:tertiary_photo": { "url": "", "source": "placeholder" },
+  "long_title:primary_photo": { "url": "https://picsum.photos/id/1080/1400/933.jpg", "source": "pexels", "width": 1400, "height": 933, "credit": "Photo by Picsum (fixture)" },
+  "closing:background": { "url": "https://picsum.photos/id/1016/1880/1253.jpg", "source": "pexels", "width": 1880, "height": 1253, "credit": "Photo by Picsum (fixture)" }
+}

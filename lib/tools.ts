@@ -47,6 +47,21 @@ export const TOOLS: Tool[] = [
       'M4.4 15a7 7 0 1 1 12.1-6.7A5 5 0 0 1 18 18h-1.4',
     ],
   },
+  {
+    slug: 'itinerary-presentation',
+    href: '/tools/itinerary-presentation',
+    name: 'AI Itinerary Presentation',
+    tagline: 'Turn an itinerary PDF into a Canva deck',
+    blurb:
+      'Drop an itinerary brief, pick a style, and get an editable Canva presentation with photos already in place.',
+    note: 'Uploads to R2 · builds in the cloud',
+    icon: [
+      'M3 5h18v11H3z',
+      'M8 21h8',
+      'M12 16v5',
+      'M7 12l3-3 2 2 3-4 2 3',
+    ],
+  },
 ];
 
 export function toolBySlug(slug: string): Tool | undefined {

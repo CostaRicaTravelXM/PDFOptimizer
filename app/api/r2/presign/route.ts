@@ -1,6 +1,7 @@
-import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { NextResponse } from 'next/server';
+import { getR2Config, publicUrlFor, r2Client, R2_ENV_NAMES, sanitizeKeyPath } from '@/lib/server/r2';
 
 /**
  * Mint short-lived upload URLs for Cloudflare R2.
@@ -11,6 +12,8 @@ import { NextResponse } from 'next/server';
  * through immediately.
  *
  * Because this endpoint hands out write access, every field is validated before it is signed.
+ * The bucket client and the key hygiene live in `lib/server/r2.ts`, shared with the
+ * presentation routes.
  */
 
 export const runtime = 'nodejs';
@@ -35,56 +38,15 @@ interface RequestFile {
   size: number;
 }
 
-function config() {
-  const accountId = process.env.R2_ACCOUNT_ID;
-  const accessKeyId = process.env.R2_ACCESS_KEY_ID;
-  const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
-  const bucket = process.env.R2_BUCKET;
-  const publicBase = process.env.R2_PUBLIC_BASE_URL;
-
-  if (!accountId || !accessKeyId || !secretAccessKey || !bucket || !publicBase) {
-    return null;
-  }
-  return {
-    accessKeyId,
-    secretAccessKey,
-    bucket,
-    publicBase: publicBase.replace(/\/+$/, ''),
-    // Overridable because R2 buckets created in a specific jurisdiction sign against
-    // `<account>.<eu|fedramp>.r2.cloudflarestorage.com` rather than the default host.
-    endpoint:
-      process.env.R2_ENDPOINT?.replace(/\/+$/, '') ||
-      `https://${accountId}.r2.cloudflarestorage.com`,
-  };
-}
-
-/**
- * Object keys are built from user input, so they are rebuilt rather than trusted: each
- * segment is filtered to safe characters, and `.`/`..` segments are dropped outright so no
- * key can climb out of its folder.
- */
-function sanitizeKeyPath(input: string): string | null {
-  const segments = input
-    .split('/')
-    .map((s) => s.trim())
-    .filter((s) => s !== '' && s !== '.' && s !== '..')
-    .map((s) => s.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, ''))
-    .filter(Boolean);
-
-  if (segments.length === 0) return null;
-  const key = segments.join('/');
-  return key.length <= 512 ? key : null;
-}
-
 function bad(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status });
 }
 
 export async function POST(request: Request) {
-  const env = config();
+  const env = getR2Config();
   if (!env) {
     return bad(
-      'Image hosting is not configured yet. The R2 environment variables (R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET, R2_PUBLIC_BASE_URL) still need to be set.',
+      `Image hosting is not configured yet. The R2 environment variables (${R2_ENV_NAMES}) still need to be set.`,
       503,
     );
   }
@@ -124,15 +86,7 @@ export async function POST(request: Request) {
     requested.push({ path, contentType, size });
   }
 
-  const client = new S3Client({
-    region: 'auto',
-    endpoint: env.endpoint,
-    credentials: { accessKeyId: env.accessKeyId, secretAccessKey: env.secretAccessKey },
-    // `<endpoint>/<bucket>/<key>`, which is the form Cloudflare documents. Left to itself the
-    // SDK signs virtual-hosted URLs (`<bucket>.<endpoint>`), turning the bucket name into a
-    // DNS label — which breaks outright for a bucket name containing a dot.
-    forcePathStyle: true,
-  });
+  const client = r2Client(env);
 
   try {
     const uploads = await Promise.all(
@@ -158,7 +112,7 @@ export async function POST(request: Request) {
           path: file.path,
           key,
           uploadUrl,
-          publicUrl: `${env.publicBase}/${key.split('/').map(encodeURIComponent).join('/')}`,
+          publicUrl: publicUrlFor(env, key),
         };
       }),
     );
