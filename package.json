@@ -17,7 +17,10 @@
     "hydration": "node scripts/hydration.mjs",
     "presentations:embed-assets": "node scripts/presentations/embed-assets.mjs",
     "presentations:fixture": "node scripts/presentations/compile-fixture.mjs",
-    "presentations:mock-n8n": "node scripts/presentations/mock-n8n.mjs"
+    "presentations:mock-n8n": "node scripts/presentations/mock-n8n.mjs",
+    "n8n:build": "node n8n/build.mjs",
+    "n8n:test": "node n8n/test-code.mjs",
+    "n8n:deploy": "node n8n/deploy.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1126.0",

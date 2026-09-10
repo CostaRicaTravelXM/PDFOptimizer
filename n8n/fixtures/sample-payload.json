@@ -1,0 +1,20 @@
+{
+  "jobId": "20260910-120000-abc123",
+  "title": "Caribbean Adventure (sample)",
+  "style": "immersive",
+  "audience": "client",
+  "language": "en",
+  "clientName": "The Morgan family",
+  "travelDates": "18–21 September 2026",
+  "travelers": "2 adults, 2 children",
+  "destination": "Caribbean Coast",
+  "notes": "Family trip; keep the tone warm and simple.",
+  "pdfKey": "presentations/jobs/20260910-120000-abc123/source.pdf",
+  "pdfUrl": "https://pub-example.r2.dev/presentations/jobs/20260910-120000-abc123/source.pdf",
+  "pageCount": 3,
+  "textChars": 1536,
+  "textLow": false,
+  "textKey": "presentations/jobs/20260910-120000-abc123/text.txt",
+  "text": "=== Page 1 ===\n\nCARIBBEAN ADVENTURE — 4 DAYS / 3 NIGHTS\nClient: The Morgan family (2 adults, 2 children)\nTravel dates: 18–21 September 2026\n\nDay 1 — Arrival in San José and flight to Limón\nMeet and greet at Juan Santamaría International Airport. Domestic flight with Sansa to Limón (35 min).\nPrivate transfer to Puerto Viejo (1 h). Check-in at Shawandha Lodge, tepee bungalow, breakfast included.\n\nDay 2 — Cahuita National Park\nGuided walk along the coastal trail with a naturalist guide. Sloths, howler monkeys, raccoons.\nSnorkelling at Punta Cahuita weather permitting. Lunch at a local soda. Afternoon at leisure.\n\n=== Page 2 ===\n\nDay 3 — Chocolate and Manzanillo\nMorning visit to a family-run cacao farm: bean to bar with tasting.\nAfternoon at Manzanillo wildlife refuge, walk to Punta Mona beach. Dinner at Koki Beach.\n\nDay 4 — Return\nBreakfast, private transfer to Limón airport, flight to San José, connection to international flight.\n\nHOTEL OPTIONS\nShawandha Lodge, Playa Chiquita — tepee bungalow — from USD 210 per night\nLe Caméléon, Cocles — deluxe room — from USD 290 per night\nHotel Banana Azul, Playa Negra — ocean view — from USD 180 per night\n\n=== Page 3 ===\n\nINCLUDED\n3 nights accommodation with breakfast; domestic flights San José–Limón–San José; all private transfers; guided Cahuita National Park walk; chocolate farm tour; bilingual guide.\n\nNOT INCLUDED\nInternational flights; travel insurance; meals not mentioned; gratuities.\n\nPRICE\nFrom USD 1,850 per adult, USD 980 per child (4–11), based on double occupancy.\n",
+  "dryRun": true
+}

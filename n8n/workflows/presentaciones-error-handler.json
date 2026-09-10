@@ -1,0 +1,238 @@
+{
+  "name": "TravelXM — Presentaciones · Error handler",
+  "nodes": [
+    {
+      "id": "f9b0f30a-13f9-4bd1-aa76-4730a2571e01",
+      "name": "Instrucciones",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -520,
+        -60
+      ],
+      "parameters": {
+        "width": 460,
+        "height": 260,
+        "content": "## Error handler\n\nSe ejecuta cuando el workflow principal falla sin pasar por su propio nodo *Fallo*.\nLee la ejecución fallida por la API de n8n, localiza el `jobId` y marca el job como `failed` en la app.\n\n**Config**: `TOOLS_APP_URL` (la app) y `N8N_BASE_URL` (esta instancia, p. ej. https://xxx.app.n8n.cloud). Credenciales: *n8n API* y *n8n → Tools Suite (bearer)*."
+      }
+    },
+    {
+      "id": "770d42ff-7b6e-4afd-a3c1-a0be47751839",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "6164a04b-0b5b-449b-a17c-2380148dbd0b",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        260,
+        0
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "21ddc023-b440-4c23-a12f-f455e7dfb09c",
+              "name": "TOOLS_APP_URL",
+              "value": "https://REEMPLAZAR.vercel.app",
+              "type": "string"
+            },
+            {
+              "id": "86282f09-8b36-4195-ab04-daf64d75de41",
+              "name": "N8N_BASE_URL",
+              "value": "https://REEMPLAZAR.app.n8n.cloud",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      }
+    },
+    {
+      "id": "8832735e-9007-4e18-a6b7-336aae565be8",
+      "name": "Leer ejecución",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        520,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Config').first().json.N8N_BASE_URL }}/api/v1/executions/{{ $('Error Trigger').first().json.execution.id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "n8nApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "includeData",
+              "value": "true"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "credentials": {
+        "n8nApi": {
+          "id": "",
+          "name": "n8n API"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "495a0e71-7a42-4a95-a652-3becdac5fbe2",
+      "name": "Localizar job",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        780,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// Localizar job — runs once in the error-handler workflow. The Error Trigger only knows the\n// execution; the job id is dug out of the failed execution's data so the app can be told.\nconst err = $('Error Trigger').first().json;\nconst exec = $input.first().json || {};\nconst runData = (((exec.data || {}).resultData || {}).runData) || {};\n\nfunction firstJson(nodeName) {\n  const runs = runData[nodeName];\n  if (!Array.isArray(runs) || !runs[0]) return null;\n  const main = ((runs[0].data || {}).main || [])[0] || [];\n  return (main[0] || {}).json || null;\n}\n\nlet jobId = '';\nconst ctx = firstJson('Contexto');\nif (ctx && ctx.jobId) jobId = ctx.jobId;\nif (!jobId) {\n  const wh = firstJson('Webhook');\n  if (wh && wh.body && wh.body.jobId) jobId = wh.body.jobId;\n}\n\nconst message = (err.execution && err.execution.error && err.execution.error.message) || 'The workflow stopped unexpectedly.';\nconst node = (err.execution && err.execution.lastNodeExecuted) || 'unknown';\n\nreturn [{ json: { found: /^\\d{8}-\\d{6}-[0-9a-f]{6}$/.test(jobId), jobId, node, message: String(message).slice(0, 500), executionId: (err.execution || {}).id || '' } }];\n",
+        "mode": "runOnceForAllItems"
+      }
+    },
+    {
+      "id": "9f1e4bb3-5f3a-4350-a6a9-4ceaf6639dbf",
+      "name": "¿Job encontrado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1040,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "e1cec9a3-a33f-4fcf-acde-afa21a047222",
+              "leftValue": "={{ $json.found }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "1261d800-2014-485d-ad33-e2e330542703",
+      "name": "Estado: failed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1300,
+        0
+      ],
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $('Config').first().json.TOOLS_APP_URL }}/api/presentations/jobs/{{ $json.jobId }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'failed', step: 'Error en ' + $json.node, error: { message: $json.message, step: 'unknown' } }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "n8n → Tools Suite (bearer)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    }
+  ],
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Leer ejecución",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer ejecución": {
+      "main": [
+        [
+          {
+            "node": "Localizar job",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Localizar job": {
+      "main": [
+        [
+          {
+            "node": "¿Job encontrado?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Job encontrado?": {
+      "main": [
+        [
+          {
+            "node": "Estado: failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  },
+  "pinData": {},
+  "active": false
+}

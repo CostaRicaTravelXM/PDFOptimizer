@@ -26,7 +26,18 @@ import { BRAND_PALETTE_HEX, FONT_WHITELIST, hex } from './brand';
  */
 
 const str = (max: number) => z.string().trim().max(max);
-const optStr = (max: number) => str(max).optional();
+// The planner's structured-output schema expresses "optional" as nullable, so null and
+// undefined mean the same thing here.
+const optStr = (max: number) =>
+  str(max)
+    .nullish()
+    .transform((v) => (v ? v : undefined));
+const optArr = <T extends z.ZodTypeAny>(item: T, max: number) =>
+  z
+    .array(item)
+    .max(max)
+    .nullish()
+    .transform((v) => v ?? undefined);
 
 const slideCopySchema = z
   .object({
@@ -35,29 +46,25 @@ const slideCopySchema = z
     subtitle: optStr(600),
     body: optStr(2000),
     day_label: optStr(60),
-    meta: z.array(str(200)).max(12).optional(),
-    stops: z
-      .array(z.object({ label: str(120), sublabel: optStr(200), date: optStr(60) }))
-      .max(12)
-      .optional(),
-    cards: z.array(z.object({ title: str(200), body: optStr(600) })).max(12).optional(),
-    options: z
-      .array(
-        z.object({
-          name: str(200),
-          location: optStr(200),
-          room: optStr(200),
-          notes: optStr(600),
-          price: optStr(100),
-        }),
-      )
-      .max(6)
-      .optional(),
-    included: z.array(str(300)).max(20).optional(),
-    excluded: z.array(str(300)).max(20).optional(),
+    meta: optArr(str(200), 12),
+    stops: optArr(z.object({ label: str(120), sublabel: optStr(200), date: optStr(60) }), 12),
+    cards: optArr(z.object({ title: str(200), body: optStr(600) }), 12),
+    options: optArr(
+      z.object({
+        name: str(200),
+        location: optStr(200),
+        room: optStr(200),
+        notes: optStr(600),
+        price: optStr(100),
+      }),
+      6,
+    ),
+    included: optArr(str(300), 20),
+    excluded: optArr(str(300), 20),
     contact: z
       .object({ name: optStr(120), email: optStr(160), phone: optStr(60), website: optStr(200) })
-      .optional(),
+      .nullish()
+      .transform((v) => v ?? undefined),
     cta: optStr(200),
   })
   .passthrough();
@@ -69,7 +76,10 @@ const assetSchema = z
     subject_kind: z.enum(['generic_scene', 'named_property', 'brand_element']).catch('generic_scene'),
     asset_match: optStr(300),
     fallback_query: optStr(300),
-    orientation: z.enum(['landscape', 'portrait']).optional(),
+    orientation: z
+      .enum(['landscape', 'portrait'])
+      .nullish()
+      .transform((v) => v ?? undefined),
   })
   .passthrough();
 
@@ -78,12 +88,23 @@ const slideSchema = z
     id: str(80).min(1),
     type: z.string(),
     layout: z.string().optional(),
-    theme: z.enum(['light', 'dark', 'accent']).optional(),
+    theme: z
+      .enum(['light', 'dark', 'accent'])
+      .nullish()
+      .transform((v) => v ?? undefined),
     copy: slideCopySchema.default({}),
-    assets: z.array(assetSchema).max(12).optional(),
-    decorative_elements: z.array(z.string()).optional(),
-    layout_constraints: z.record(z.number()).optional(),
-    warnings: z.array(z.string()).optional(),
+    assets: optArr(assetSchema, 12),
+    decorative_elements: optArr(z.string(), 12),
+    layout_constraints: z
+      .record(z.number().nullable())
+      .nullish()
+      .transform((v) => {
+        if (!v) return undefined;
+        const out: Record<string, number> = {};
+        for (const [k, n] of Object.entries(v)) if (typeof n === 'number') out[k] = n;
+        return out;
+      }),
+    warnings: optArr(z.string(), 20),
   })
   .passthrough();
 
@@ -98,11 +119,12 @@ const manifestSchema = z
     }),
     brand: z
       .object({
-        palette: z.array(z.string()).optional(),
-        title_font: z.string().optional(),
-        body_font: z.string().optional(),
+        palette: optArr(z.string(), 20),
+        title_font: optStr(100),
+        body_font: optStr(100),
       })
-      .optional(),
+      .nullish()
+      .transform((v) => v ?? undefined),
     slides: z.array(slideSchema).min(1, 'at least one slide is required'),
   })
   .passthrough();
