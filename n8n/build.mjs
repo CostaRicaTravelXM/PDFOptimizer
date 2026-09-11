@@ -109,7 +109,7 @@ const CRED = {
   bearer: { httpHeaderAuth: { id: '', name: 'n8n → Tools Suite (bearer)' } },
   anthropic: { anthropicApi: { id: '', name: 'Anthropic account TravelXM' } },
   pexels: { httpHeaderAuth: { id: '', name: 'Pexels' } },
-  canva: { oAuth2Api: { id: '', name: 'Canva Connect' } },
+  canva: { canvaOAuth2Api: { id: '', name: 'Canva account' } },
   n8nApi: { n8nApi: { id: '', name: 'n8n API' } },
 };
 
@@ -209,7 +209,7 @@ function buildMain() {
       '',
       '**Antes de activar:**',
       '1. Nodo **Config**: poner `TOOLS_APP_URL` (la app en Vercel) y `CANVA_ENABLED`.',
-      '2. Credenciales: *Tools Suite → n8n (x-tools-secret)* en el Webhook; *n8n → Tools Suite (bearer)* en los nodos `Estado: …` y `Compilar`; *Anthropic*; *Pexels*; *Canva Connect* (OAuth2, PKCE).',
+      '2. Credenciales: *Tools Suite → n8n (x-tools-secret)* en el Webhook; *n8n → Tools Suite (bearer)* en los nodos `Estado: …` y `Compilar`; *Anthropic*; *Pexels*; *Canva account* (Canva OAuth2 API: sólo Client ID y Secret, el resto viene puesto).',
       '3. Settings → Error Workflow → *TravelXM — Presentaciones · Error handler*.',
       '4. Activar y copiar la Production URL del Webhook a `N8N_PRESENTATION_WEBHOOK_URL` en Vercel.',
       '',
@@ -316,40 +316,19 @@ function buildMain() {
     "{ status: 'done', step: 'Lista (Canva omitido).', warnings: ['Canva import was skipped; download the PowerPoint and import it by hand.'] }",
   ), patchExtra);
 
-  add('Descargar PPTX', 'n8n-nodes-base.httpRequest', 4.2, {
-    method: 'GET',
-    url: "={{ $('Estado: importing').first().json.pptxUrl }}",
-    options: { timeout: 120000, response: { response: { responseFormat: 'file', outputPropertyName: 'data' } } },
-  }, { retryOnFail: true, maxTries: 2, waitBetweenTries: 3000, onError: 'continueErrorOutput' });
-  add('Metadatos Canva', 'n8n-nodes-base.code', 2, code(codeSource('canva-metadata.js')));
-  add('Canva — crear import', 'n8n-nodes-base.httpRequest', 4.2, {
-    method: 'POST',
-    url: `={{ ${CTX}.canvaUrl }}/imports`,
-    authentication: 'genericCredentialType',
-    genericAuthType: 'oAuth2Api',
-    sendHeaders: true,
-    headerParameters: {
-      parameters: [
-        { name: 'Content-Type', value: 'application/octet-stream' },
-        { name: 'Import-Metadata', value: '={{ $json.importMeta }}' },
-      ],
-    },
-    sendBody: true,
-    contentType: 'binaryData',
-    inputDataFieldName: 'data',
-    options: { timeout: 120000 },
-  }, { credentials: CRED.canva, retryOnFail: true, maxTries: 2, waitBetweenTries: 5000, onError: 'continueErrorOutput' });
+  // The official Canva node imports from a public URL and polls the job itself, so the deck
+  // never passes through n8n and there is no wait loop to maintain. It throws on failure or
+  // timeout; the error output carries that to the same normaliser as a success.
+  add('Canva — importar', '@canva/n8n-nodes-canva.canva', 1, {
+    resource: 'designImport',
+    operation: 'createImport',
+    url: "={{ $('Compilar').first().json.pptxUrl }}",
+    title: `={{ ${CTX}.title }}`,
+    pollInterval: 3000,
+    maxWait: 180,
+  }, { credentials: CRED.canva, onError: 'continueErrorOutput' });
   add('Resultado Canva', 'n8n-nodes-base.code', 2, code(codeSource('canva-result.js')));
-  add('¿Canva listo?', 'n8n-nodes-base.if', 2.2, ifEquals('$json.state', 'success'));
-  add('¿Seguir esperando?', 'n8n-nodes-base.if', 2.2, ifEquals('$json.state', 'pending'));
-  add('Esperar', 'n8n-nodes-base.wait', 1.1, { resume: 'timeInterval', amount: 5, unit: 'seconds' }, { webhookId: uuid('wait:canva') });
-  add('Canva — consultar', 'n8n-nodes-base.httpRequest', 4.2, {
-    method: 'GET',
-    url: `={{ ${CTX}.canvaUrl }}/imports/{{ $('Resultado Canva').first().json.importJobId }}`,
-    authentication: 'genericCredentialType',
-    genericAuthType: 'oAuth2Api',
-    options: { timeout: 30000 },
-  }, { credentials: CRED.canva, retryOnFail: true, maxTries: 3, waitBetweenTries: 5000, onError: 'continueRegularOutput' });
+  add('¿Canva OK?', 'n8n-nodes-base.if', 2.2, ifBool('$json.ok'));
   add('Estado: done (con Canva)', 'n8n-nodes-base.httpRequest', 4.2, patchJob(
     "{ status: 'done', step: 'Lista.', canva: { designId: $json.designId, editUrl: $json.editUrl, viewUrl: $json.viewUrl || undefined } }",
   ), patchExtra);
@@ -379,17 +358,14 @@ function buildMain() {
   link('Pexels — buscar', 'Unir', { input: 0 });
   link('¿Buscar en Pexels?', 'Unir', { output: 1, input: 1 });
   chain('Unir', 'Seleccionar activos', 'Estado: compiling', 'Compilar', 'Estado: importing', '¿Importar a Canva?');
-  link('¿Importar a Canva?', 'Descargar PPTX', { output: 0 });
+  link('¿Importar a Canva?', 'Canva — importar', { output: 0 });
   link('¿Importar a Canva?', 'Estado: done (sin Canva)', { output: 1 });
-  chain('Descargar PPTX', 'Metadatos Canva', 'Canva — crear import', 'Resultado Canva', '¿Canva listo?');
-  link('¿Canva listo?', 'Estado: done (con Canva)', { output: 0 });
-  link('¿Canva listo?', '¿Seguir esperando?', { output: 1 });
-  link('¿Seguir esperando?', 'Esperar', { output: 0 });
-  link('¿Seguir esperando?', 'Estado: done (Canva falló)', { output: 1 });
-  chain('Esperar', 'Canva — consultar', 'Resultado Canva');
+  chain('Canva — importar', 'Resultado Canva', '¿Canva OK?');
+  link('Canva — importar', 'Resultado Canva', { output: 1 }); // import failed or timed out
+  link('¿Canva OK?', 'Estado: done (con Canva)', { output: 0 });
+  link('¿Canva OK?', 'Estado: done (Canva falló)', { output: 1 });
   // Error outputs (second output of nodes with onError: continueErrorOutput).
   for (const n of ['Leer job', 'Claude — planificar', 'Claude — reintento', 'Compilar']) link(n, 'Fallo', { output: 1 });
-  for (const n of ['Descargar PPTX', 'Canva — crear import']) link(n, 'Resultado Canva', { output: 1 });
   chain('Fallo', 'Estado: failed');
 
   // --- layout ----------------------------------------------------------------------------
@@ -399,11 +375,10 @@ function buildMain() {
   row(0, 'Webhook', 'Validar payload', '¿Payload válido?', 'Responder 202', 'Config', 'Contexto', 'Leer job', '¿Se puede ejecutar?', '¿Ejecutar?', 'Estado: planning', 'Índice de activos', 'Construir petición Claude', 'Claude — planificar', 'Validar manifest', '¿Manifest válido?', 'Manifest final');
   place('Responder 400', 3 * X, 200);
   row(220, ...Array(15).fill(null), 'Construir reintento', 'Claude — reintento', 'Validar manifest (2)', '¿Manifest válido (2)?');
-  row(460, 'Estado: resolving_assets', 'Aplanar requisitos', 'WorkDrive y ruta', '¿Buscar en Pexels?', 'Pexels — buscar', 'Unir', 'Seleccionar activos', 'Estado: compiling', 'Compilar', 'Estado: importing', '¿Importar a Canva?', 'Descargar PPTX', 'Metadatos Canva', 'Canva — crear import', 'Resultado Canva', '¿Canva listo?');
-  place('Estado: done (sin Canva)', 10 * X, 680);
-  row(680, ...Array(15).fill(null), 'Estado: done (con Canva)');
-  row(900, ...Array(12).fill(null), 'Esperar', 'Canva — consultar', '¿Seguir esperando?', 'Estado: done (Canva falló)');
-  row(1140, ...Array(8).fill(null), 'Fallo', 'Estado: failed');
+  row(460, 'Estado: resolving_assets', 'Aplanar requisitos', 'WorkDrive y ruta', '¿Buscar en Pexels?', 'Pexels — buscar', 'Unir', 'Seleccionar activos', 'Estado: compiling', 'Compilar', 'Estado: importing', '¿Importar a Canva?', 'Canva — importar', 'Resultado Canva', '¿Canva OK?', 'Estado: done (con Canva)');
+  place('Estado: done (sin Canva)', 11 * X, 680);
+  place('Estado: done (Canva falló)', 14 * X, 680);
+  row(900, ...Array(8).fill(null), 'Fallo', 'Estado: failed');
   return w.finish();
 }
 

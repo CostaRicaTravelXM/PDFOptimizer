@@ -46,10 +46,10 @@ Webhook (POST /itinerary-presentation, header x-tools-secret)
         Unir → Seleccionar activos → Estado: compiling
         Compilar (POST /api/presentations/compile en la app) → Estado: importing
         ¿Importar a Canva? ─ no (dryRun / CANVA_ENABLED=false) → Estado: done (sin Canva)
-                           └ sí → Descargar PPTX → Metadatos Canva → Canva — crear import
-                                  → Resultado Canva → ¿listo? → Estado: done (con Canva)
-                                                    → pendiente → Esperar 5 s → consultar (máx. 36)
-                                                    → falló/timeout → Estado: done (Canva falló)
+                           └ sí → Canva — importar (nodo oficial: importa desde la URL
+                                  pública del PPTX y espera) → Resultado Canva → ¿Canva OK?
+                                      → sí → Estado: done (con Canva)
+                                      → no → Estado: done (Canva falló)
 Cualquier salida de error ──────────────────────────► Fallo → Estado: failed
 ```
 
@@ -66,7 +66,7 @@ curso (`force: true` en el cuerpo lo fuerza).
 | `n8n → Tools Suite (bearer)` | Header Auth | ✅ creada | Name `Authorization`, `Bearer <secreto>`; el secreto va en Vercel como `PRESENTATIONS_COMPILE_SECRET` |
 | `Anthropic account TravelXM` | Anthropic | ✅ existe | API key de Anthropic |
 | `Pexels` | Header Auth | ❌ falta | Name `Authorization`, Value = la API key de Pexels (sin "Bearer") |
-| `Canva Connect` | OAuth2 API | ❌ falta | Ver §Canva |
+| `Canva account` | Canva OAuth2 API | ❌ falta | Ver §Canva; sólo Client ID y Secret |
 | `n8n API` | n8n API | ❌ falta | Una API key de esta instancia (Settings → n8n API); sólo la usa el error handler |
 
 Las dos primeras las generó `node n8n/create-secrets.mjs` (secretos aleatorios, creados una
@@ -109,25 +109,29 @@ tocar nada; `--activate` activa el principal; `--folder` / `--project` cambian e
 
 ## Canva
 
+La importación la hace el **nodo oficial de Canva** (`@canva/n8n-nodes-canva`, ya instalado en
+la instancia), recurso *Design Import* → *Import From URL*. Le pasamos la URL pública del
+PPTX en R2 y el título; él crea el trabajo de importación y **espera a que termine** (sondea
+cada 3 s, hasta 180 s). Por eso no hay descarga del binario, ni cabecera `Import-Metadata`, ni
+bucle de espera: un solo nodo.
+
 1. [Canva Developers](https://www.canva.com/developers/) → *Your integrations* → crear una
    integración **privada** (sólo el equipo de TravelXM puede autorizarla).
-2. *Scopes*: `design:content:write` (Design Import) y `design:meta:read`. Comprobar los nombres
-   exactos en el portal.
-3. *Authentication* → Redirect URL: `https://<instancia>.app.n8n.cloud/rest/oauth2-credential/callback`.
-4. Generar el *client secret* (se muestra una sola vez).
-5. En n8n, credencial **OAuth2 API** llamada `Canva Connect`: Grant Type **PKCE**,
-   Authorization URL `https://www.canva.com/api/oauth/authorize`, Access Token URL
-   `https://api.canva.com/rest/v1/oauth/token`, Client ID y Secret, Scope
-   `design:content:write design:meta:read`, Authentication **Header**. *Connect my account*
-   con el usuario de Canva que será dueño de los diseños.
-6. `CANVA_ENABLED=true` en Config.
+2. *Authentication* → Redirect URL:
+   `https://blocktxm.app.n8n.cloud/rest/oauth2-credential/callback`.
+3. Generar el *client secret* (se muestra una sola vez).
+4. En n8n, credencial **Canva OAuth2 API** llamada `Canva account`: pegar Client ID y Client
+   Secret y pulsar *Connect my account* con el usuario de Canva que será dueño de los diseños.
+   El tipo de concesión (PKCE), las URLs y los permisos ya vienen puestos por el nodo; no hay
+   que escribirlos. Los permisos incluyen `design:content:write`, que es el que necesita la
+   importación.
+5. `CANVA_ENABLED=true` en el nodo Config (o `npm run n8n:deploy -- --canva=true`).
 
-Canva rota el refresh token en cada renovación; que sólo esta credencial lo use. Si el PKCE
-con secreto no funciona en la credencial genérica de n8n, la alternativa es mover el OAuth de
-Canva a la app (ruta `/api/canva/...`) y que el nodo *Canva — crear import* llame a la app.
+Canva rota el refresh token en cada renovación; que sólo esta credencial lo use.
 
-Si la importación falla o tarda más de tres minutos, el job termina como `done` **sin**
-enlace de Canva y la app ofrece descargar el PowerPoint. Nunca se pierde el trabajo hecho.
+Si la importación falla o tarda más de 180 s, el nodo lanza error, su salida de error va al
+mismo normalizador y el job termina como `done` **sin** enlace de Canva: la app ofrece
+descargar el PowerPoint. Nunca se pierde el trabajo hecho.
 
 ## Contrato
 

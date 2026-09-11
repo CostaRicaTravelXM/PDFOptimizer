@@ -4,6 +4,8 @@
  *   npm run n8n:deploy                      # create/update in the configured folder
  *   npm run n8n:deploy -- --activate        # …and activate the Main workflow
  *   npm run n8n:deploy -- --dry-run         # show what would happen, change nothing
+ *   npm run n8n:deploy -- --app-url=https://…   # point the Config node at an app
+ *   npm run n8n:deploy -- --canva=false     # skip the Canva step (job ends with the PPTX)
  *
  * Needs `N8N_BASE_URL` and `N8N_API_KEY` (environment or `.env.local`). By default the
  * workflows land in the API key owner's personal project, in the folder named by
@@ -56,6 +58,10 @@ const activate = !!flag('activate', false);
 const dryRun = !!flag('dry-run', false);
 const wantProject = flag('project', E.N8N_PROJECT || null);
 const wantFolder = flag('folder', E.N8N_FOLDER || 'TravelXM Workflows');
+// The Config node holds the few settings that change per environment. Setting them here
+// keeps a redeploy from silently reverting them to the placeholders in the generated JSON.
+const appUrl = flag('app-url', E.N8N_TOOLS_APP_URL || null);
+const canva = flag('canva', null);
 
 async function api(method, path, body) {
   const res = await fetch(`${base}/api/v1${path}`, {
@@ -130,6 +136,20 @@ function wireCredentials(nodes) {
   }
 }
 
+/** Overwrite values in the workflow's Config node, leaving the rest of it alone. */
+function applyConfig(wf, values) {
+  const node = wf.nodes.find((n) => n.name === 'Config');
+  if (!node) return [];
+  const applied = [];
+  for (const a of node.parameters.assignments?.assignments ?? []) {
+    if (values[a.name] !== undefined && values[a.name] !== null) {
+      a.value = String(values[a.name]);
+      applied.push(`${a.name}=${a.value}`);
+    }
+  }
+  return applied;
+}
+
 // --- deploy -------------------------------------------------------------------------------------
 const existing = await pages(`/workflows?projectId=${project.id}&excludePinnedData=true`);
 const inFolder = new Map();
@@ -143,6 +163,12 @@ const deployed = [];
 for (const file of files) {
   const wf = JSON.parse(readFileSync(join(here, 'workflows', file), 'utf8'));
   wireCredentials(wf.nodes);
+  const configured = applyConfig(wf, {
+    TOOLS_APP_URL: appUrl,
+    N8N_BASE_URL: file.includes('error-handler') ? base : undefined,
+    CANVA_ENABLED: canva,
+  });
+  if (configured.length) console.log(`config   ${wf.name}: ${configured.join(', ')}`);
   const found = inFolder.get(wf.name) ?? existing.find((w) => w.name === wf.name);
   const body = { name: wf.name, nodes: wf.nodes, connections: wf.connections, settings: wf.settings };
 

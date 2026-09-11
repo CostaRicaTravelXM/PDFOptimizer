@@ -13,7 +13,7 @@
       "parameters": {
         "width": 520,
         "height": 420,
-        "content": "## TravelXM — Presentaciones\n\nGenerado por `npm run n8n:build`; no editar el código de los nodos aquí, editar `n8n/src/`.\n\n**Antes de activar:**\n1. Nodo **Config**: poner `TOOLS_APP_URL` (la app en Vercel) y `CANVA_ENABLED`.\n2. Credenciales: *Tools Suite → n8n (x-tools-secret)* en el Webhook; *n8n → Tools Suite (bearer)* en los nodos `Estado: …` y `Compilar`; *Anthropic*; *Pexels*; *Canva Connect* (OAuth2, PKCE).\n3. Settings → Error Workflow → *TravelXM — Presentaciones · Error handler*.\n4. Activar y copiar la Production URL del Webhook a `N8N_PRESENTATION_WEBHOOK_URL` en Vercel.\n\nEl cuerpo del webhook puede llevar `dryRun: true` (omite Canva) y `force: true` (re-ejecuta un job terminado)."
+        "content": "## TravelXM — Presentaciones\n\nGenerado por `npm run n8n:build`; no editar el código de los nodos aquí, editar `n8n/src/`.\n\n**Antes de activar:**\n1. Nodo **Config**: poner `TOOLS_APP_URL` (la app en Vercel) y `CANVA_ENABLED`.\n2. Credenciales: *Tools Suite → n8n (x-tools-secret)* en el Webhook; *n8n → Tools Suite (bearer)* en los nodos `Estado: …` y `Compilar`; *Anthropic*; *Pexels*; *Canva account* (Canva OAuth2 API: sólo Client ID y Secret, el resto viene puesto).\n3. Settings → Error Workflow → *TravelXM — Presentaciones · Error handler*.\n4. Activar y copiar la Production URL del Webhook a `N8N_PRESENTATION_WEBHOOK_URL` en Vercel.\n\nEl cuerpo del webhook puede llevar `dryRun: true` (omite Canva) y `force: true` (re-ejecuta un job terminado)."
       }
     },
     {
@@ -841,7 +841,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        2600,
+        2860,
         680
       ],
       "parameters": {
@@ -867,89 +867,28 @@
       "waitBetweenTries": 2000
     },
     {
-      "id": "9bea4bad-b4ed-4b3e-a228-655c047c6895",
-      "name": "Descargar PPTX",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "id": "6d372963-39a5-4e97-ac49-e59c6826502b",
+      "name": "Canva — importar",
+      "type": "@canva/n8n-nodes-canva.canva",
+      "typeVersion": 1,
       "position": [
         2860,
         460
       ],
       "parameters": {
-        "method": "GET",
-        "url": "={{ $('Estado: importing').first().json.pptxUrl }}",
-        "options": {
-          "timeout": 120000,
-          "response": {
-            "response": {
-              "responseFormat": "file",
-              "outputPropertyName": "data"
-            }
-          }
-        }
-      },
-      "retryOnFail": true,
-      "maxTries": 2,
-      "waitBetweenTries": 3000,
-      "onError": "continueErrorOutput"
-    },
-    {
-      "id": "5dfff18c-1fa6-423b-a773-b2851f8721f4",
-      "name": "Metadatos Canva",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        3120,
-        460
-      ],
-      "parameters": {
-        "jsCode": "// Metadatos Canva — runs once. Keeps the downloaded PPTX binary and adds the\n// `Import-Metadata` header value Canva wants: base64 of a JSON object whose title is itself\n// base64.\nconst ctx = $('Contexto').first().json;\nconst b64 = (s) => Buffer.from(String(s), 'utf8').toString('base64');\nconst importMeta = b64(\n  JSON.stringify({\n    title_base64: b64(ctx.title),\n    mime_type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',\n  }),\n);\nconst item = $input.first();\nreturn [{ json: { importMeta }, binary: item.binary }];\n",
-        "mode": "runOnceForAllItems"
-      }
-    },
-    {
-      "id": "fe255f50-34fc-49d3-aa91-b483dbed2aa0",
-      "name": "Canva — crear import",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        3380,
-        460
-      ],
-      "parameters": {
-        "method": "POST",
-        "url": "={{ $('Contexto').first().json.canvaUrl }}/imports",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "oAuth2Api",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Content-Type",
-              "value": "application/octet-stream"
-            },
-            {
-              "name": "Import-Metadata",
-              "value": "={{ $json.importMeta }}"
-            }
-          ]
-        },
-        "sendBody": true,
-        "contentType": "binaryData",
-        "inputDataFieldName": "data",
-        "options": {
-          "timeout": 120000
-        }
+        "resource": "designImport",
+        "operation": "createImport",
+        "url": "={{ $('Compilar').first().json.pptxUrl }}",
+        "title": "={{ $('Contexto').first().json.title }}",
+        "pollInterval": 3000,
+        "maxWait": 180
       },
       "credentials": {
-        "oAuth2Api": {
+        "canvaOAuth2Api": {
           "id": "",
-          "name": "Canva Connect"
+          "name": "Canva account"
         }
       },
-      "retryOnFail": true,
-      "maxTries": 2,
-      "waitBetweenTries": 5000,
       "onError": "continueErrorOutput"
     },
     {
@@ -958,21 +897,21 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        3640,
+        3120,
         460
       ],
       "parameters": {
-        "jsCode": "// Resultado Canva — runs once per poll. Reads an import job (from the create call or a\n// status poll) into one of four states. It never throws: a Canva failure ends the job as\n// \"done without Canva\", with the PowerPoint to download, per the business rules.\nconst MAX_POLLS = 36; // × 5 s ≈ 3 minutes\nconst r = $input.first().json || {};\nconst job = r.job || {};\nconst attempts = $runIndex + 1;\n\nlet state = job.status === 'success' ? 'success' : job.status === 'failed' ? 'failed' : 'pending';\n// An error output item (the create call failed outright) carries `error` and no job.\nif (!r.job && r.error) state = 'failed';\nif (state === 'pending' && attempts >= MAX_POLLS) state = 'timeout';\n\nconst design = (job.result && Array.isArray(job.result.designs) && job.result.designs[0]) || {};\nconst urls = design.urls || {};\n\nreturn [\n  {\n    json: {\n      state,\n      attempts,\n      importJobId: job.id || '',\n      designId: design.id || '',\n      editUrl: urls.edit_url || '',\n      viewUrl: urls.view_url || '',\n      error:\n        (job.error && (job.error.message || job.error.code)) ||\n        (r.error && (r.error.message || r.error.code)) ||\n        (state === 'timeout' ? 'Canva did not finish the import in time' : ''),\n    },\n  },\n];\n",
+        "jsCode": "// Resultado Canva — runs once. Reads what the Canva node returned, or the error item it\n// produced when the import failed or timed out, into one shape.\n//\n// It never throws. A Canva failure is not a failed job: the deck is already built and in the\n// bucket, so the job ends as \"done\" with a warning and the PowerPoint to download, which is\n// what the business rules ask for.\nconst r = $input.first().json || {};\nconst job = r.job || {};\nconst design = (job.result && Array.isArray(job.result.designs) && job.result.designs[0]) || {};\nconst urls = design.urls || {};\nconst ok = job.status === 'success' && !!design.id;\n\n// n8n puts a string here for some failures and an object for others.\nconst text = (e) => (!e ? '' : typeof e === 'string' ? e : e.message || e.description || e.code || '');\n\nreturn [\n  {\n    json: {\n      ok,\n      designId: design.id || '',\n      editUrl: urls.edit_url || '',\n      viewUrl: urls.view_url || '',\n      error: ok ? '' : text(r.error) || text(job.error) || 'Canva did not return a design',\n    },\n  },\n];\n",
         "mode": "runOnceForAllItems"
       }
     },
     {
-      "id": "4e793199-cdf4-4f50-ab90-a9f1ccc765fb",
-      "name": "¿Canva listo?",
+      "id": "ee71d597-2ec2-4145-a271-3a39ae625a76",
+      "name": "¿Canva OK?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        3900,
+        3380,
         460
       ],
       "parameters": {
@@ -985,12 +924,13 @@
           },
           "conditions": [
             {
-              "id": "19e8e8c1-a0d1-498c-ae03-44b323d74843",
-              "leftValue": "={{ $json.state }}",
-              "rightValue": "success",
+              "id": "a9e540f0-6f29-480c-a044-fd6c3deae97c",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
               "operator": {
-                "type": "string",
-                "operation": "equals"
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
               }
             }
           ],
@@ -998,84 +938,6 @@
         },
         "options": {}
       }
-    },
-    {
-      "id": "ada9c186-6908-4ac9-a5c4-67e8c1d66cf9",
-      "name": "¿Seguir esperando?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.2,
-      "position": [
-        3640,
-        900
-      ],
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "loose",
-            "version": 2
-          },
-          "conditions": [
-            {
-              "id": "14e1796f-b99f-478a-a195-95af02197919",
-              "leftValue": "={{ $json.state }}",
-              "rightValue": "pending",
-              "operator": {
-                "type": "string",
-                "operation": "equals"
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      }
-    },
-    {
-      "id": "bc41b280-0fe7-4fe7-a5aa-77438610cca5",
-      "name": "Esperar",
-      "type": "n8n-nodes-base.wait",
-      "typeVersion": 1.1,
-      "position": [
-        3120,
-        900
-      ],
-      "parameters": {
-        "resume": "timeInterval",
-        "amount": 5,
-        "unit": "seconds"
-      },
-      "webhookId": "be19c5e4-903e-4628-a8a6-dcc158692874"
-    },
-    {
-      "id": "d361fa17-8876-4095-ac70-c631dd4cb0e9",
-      "name": "Canva — consultar",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        3380,
-        900
-      ],
-      "parameters": {
-        "method": "GET",
-        "url": "={{ $('Contexto').first().json.canvaUrl }}/imports/{{ $('Resultado Canva').first().json.importJobId }}",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "oAuth2Api",
-        "options": {
-          "timeout": 30000
-        }
-      },
-      "credentials": {
-        "oAuth2Api": {
-          "id": "",
-          "name": "Canva Connect"
-        }
-      },
-      "retryOnFail": true,
-      "maxTries": 3,
-      "waitBetweenTries": 5000,
-      "onError": "continueRegularOutput"
     },
     {
       "id": "fdab0a89-6612-4dbb-a49c-bea8402dd403",
@@ -1083,8 +945,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        3900,
-        680
+        3640,
+        460
       ],
       "parameters": {
         "method": "PATCH",
@@ -1114,8 +976,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        3900,
-        900
+        3640,
+        680
       ],
       "parameters": {
         "method": "PATCH",
@@ -1146,7 +1008,7 @@
       "typeVersion": 2,
       "position": [
         2080,
-        1140
+        900
       ],
       "parameters": {
         "jsCode": "// Fallo — runs once. Every error output in the workflow lands here. It names the node that\n// failed and carries a readable message to the app, which shows it under the timeline.\nconst item = $input.first().json || {};\nlet jobId = '';\ntry {\n  jobId = $('Contexto').first().json.jobId;\n} catch (e) {\n  jobId = (($('Webhook').first().json || {}).body || {}).jobId || '';\n}\nconst raw =\n  (item.error && (item.error.message || item.error.description || item.error)) ||\n  item.message ||\n  (Array.isArray(item.errors) ? item.errors.join('; ') : '') ||\n  'Unknown error';\nconst step = $prevNode.name;\n\n// Which timeline row failed, for the page: map node names onto job statuses.\nconst STATUS_FOR = [\n  [/Claude|manifest|petición/i, 'planning'],\n  [/Pexels|activos|requisitos|ruta/i, 'resolving_assets'],\n  [/Compilar/i, 'compiling'],\n  [/Canva|PPTX/i, 'importing'],\n];\nlet status = 'queued';\nfor (const [re, s] of STATUS_FOR) if (re.test(step)) { status = s; break; }\n\nreturn [{ json: { jobId, step, status, message: String(raw).slice(0, 500) } }];\n",
@@ -1160,7 +1022,7 @@
       "typeVersion": 4.2,
       "position": [
         2340,
-        1140
+        900
       ],
       "parameters": {
         "method": "PATCH",
@@ -1577,7 +1439,7 @@
       "main": [
         [
           {
-            "node": "Descargar PPTX",
+            "node": "Canva — importar",
             "type": "main",
             "index": 0
           }
@@ -1591,36 +1453,7 @@
         ]
       ]
     },
-    "Descargar PPTX": {
-      "main": [
-        [
-          {
-            "node": "Metadatos Canva",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Resultado Canva",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Metadatos Canva": {
-      "main": [
-        [
-          {
-            "node": "Canva — crear import",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Canva — crear import": {
+    "Canva — importar": {
       "main": [
         [
           {
@@ -1642,14 +1475,14 @@
       "main": [
         [
           {
-            "node": "¿Canva listo?",
+            "node": "¿Canva OK?",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "¿Canva listo?": {
+    "¿Canva OK?": {
       "main": [
         [
           {
@@ -1660,47 +1493,7 @@
         ],
         [
           {
-            "node": "¿Seguir esperando?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "¿Seguir esperando?": {
-      "main": [
-        [
-          {
-            "node": "Esperar",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
             "node": "Estado: done (Canva falló)",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Esperar": {
-      "main": [
-        [
-          {
-            "node": "Canva — consultar",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Canva — consultar": {
-      "main": [
-        [
-          {
-            "node": "Resultado Canva",
             "type": "main",
             "index": 0
           }

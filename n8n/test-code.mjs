@@ -281,19 +281,23 @@ test('select-assets builds the map, dedupes photos and falls back to placeholder
 });
 
 // --- 6. Canva, failure, error handler ------------------------------------------------------------
-test('canva-result maps success, failure, pending, timeout and outright errors', () => {
-  const ok = runCode('canva-result.js', { inputs: [{ json: { job: { id: 'imp1', status: 'success', result: { designs: [{ id: 'D1', urls: { edit_url: 'https://canva.com/e', view_url: 'https://canva.com/v' } }] } } } }] })[0].json;
-  assert.deepEqual([ok.state, ok.designId, ok.editUrl], ['success', 'D1', 'https://canva.com/e']);
-  assert.equal(runCode('canva-result.js', { inputs: [{ json: { job: { id: 'imp1', status: 'failed', error: { code: 'x', message: 'nope' } } } }] })[0].json.state, 'failed');
-  assert.equal(runCode('canva-result.js', { inputs: [{ json: { job: { id: 'imp1', status: 'in_progress' } } }] })[0].json.state, 'pending');
-  assert.equal(runCode('canva-result.js', { inputs: [{ json: { job: { id: 'imp1', status: 'in_progress' } } }], runIndex: 40 })[0].json.state, 'timeout');
-  assert.equal(runCode('canva-result.js', { inputs: [{ json: { error: { message: 'HTTP 401' } } }] })[0].json.state, 'failed');
-});
-test('canva-metadata encodes the title twice and keeps the binary', () => {
-  const [{ json, binary }] = runCode('canva-metadata.js', { inputs: [{ json: {}, binary: { data: { mimeType: 'application/octet-stream' } } }], nodes });
-  const meta = JSON.parse(Buffer.from(json.importMeta, 'base64').toString('utf8'));
-  assert.equal(Buffer.from(meta.title_base64, 'base64').toString('utf8'), ctx.title);
-  assert.ok(binary.data);
+test('canva-result reads a finished import, and never throws on failure', () => {
+  const success = { job: { id: 'imp1', status: 'success', result: { designs: [{ id: 'D1', urls: { edit_url: 'https://canva.com/e', view_url: 'https://canva.com/v' } }] } } };
+  const ok = runCode('canva-result.js', { inputs: [{ json: success }] })[0].json;
+  assert.deepEqual([ok.ok, ok.designId, ok.editUrl, ok.viewUrl, ok.error], [true, 'D1', 'https://canva.com/e', 'https://canva.com/v', '']);
+
+  // The node throws on failure/timeout; n8n hands the error item to this node instead.
+  const thrownObj = runCode('canva-result.js', { inputs: [{ json: { error: { message: 'Design import job imp1 timed out after 180s' } } }] })[0].json;
+  assert.equal(thrownObj.ok, false);
+  assert.ok(thrownObj.error.includes('timed out'));
+  const thrownStr = runCode('canva-result.js', { inputs: [{ json: { error: 'Forbidden' } }] })[0].json;
+  assert.equal(thrownStr.error, 'Forbidden');
+
+  // A success-shaped answer with no design must not pass as ok.
+  const empty = runCode('canva-result.js', { inputs: [{ json: { job: { id: 'imp1', status: 'success', result: { designs: [] } } } }] })[0].json;
+  assert.equal(empty.ok, false);
+  assert.ok(empty.error.length > 0);
+  assert.equal(runCode('canva-result.js', { inputs: [{ json: {} }] })[0].json.ok, false);
 });
 test('fail maps the failing node to a timeline status', () => {
   const [{ json }] = runCode('fail.js', { inputs: [{ json: { error: { message: 'HTTP 529 overloaded' } } }], nodes, prevNode: 'Claude — planificar' });
