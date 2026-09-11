@@ -115,10 +115,21 @@ const credentials = await pages('/credentials');
 const byName = new Map(credentials.map((c) => [c.name, c]));
 const unresolved = new Map();
 
-function wireCredentials(nodes) {
+/**
+ * `keep` is the workflow as it exists in n8n. A credential someone selected in the editor
+ * wins over the name in the generated JSON: the generated name is only a suggestion, and a
+ * redeploy must never undo the wiring a person did by hand.
+ */
+function wireCredentials(nodes, keep) {
+  const existing = new Map((keep?.nodes ?? []).map((n) => [n.name, n.credentials ?? {}]));
   for (const node of nodes) {
     if (!node.credentials) continue;
     for (const [type, ref] of Object.entries(node.credentials)) {
+      const already = existing.get(node.name)?.[type];
+      if (already?.id) {
+        node.credentials[type] = already;
+        continue;
+      }
       const found = byName.get(ref.name);
       if (found && found.type === type) {
         ref.id = found.id;
@@ -162,14 +173,15 @@ const files = ['presentaciones-error-handler.json', 'presentaciones-main.json'];
 const deployed = [];
 for (const file of files) {
   const wf = JSON.parse(readFileSync(join(here, 'workflows', file), 'utf8'));
-  wireCredentials(wf.nodes);
+  const already = inFolder.get(wf.name) ?? existing.find((w) => w.name === wf.name);
+  wireCredentials(wf.nodes, already);
   const configured = applyConfig(wf, {
     TOOLS_APP_URL: appUrl,
     N8N_BASE_URL: file.includes('error-handler') ? base : undefined,
     CANVA_ENABLED: canva,
   });
   if (configured.length) console.log(`config   ${wf.name}: ${configured.join(', ')}`);
-  const found = inFolder.get(wf.name) ?? existing.find((w) => w.name === wf.name);
+  const found = already;
   const body = { name: wf.name, nodes: wf.nodes, connections: wf.connections, settings: wf.settings };
 
   if (dryRun) {
