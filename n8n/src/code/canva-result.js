@@ -1,4 +1,4 @@
-// Resultado Canva — runs once. Reads what the Canva node returned, or the error item it
+// Canva result — runs once. Reads what the Canva node returned, or the error item it
 // produced when the import failed or timed out, into one shape.
 //
 // It never throws. A Canva failure is not a failed job: the deck is already built and in the

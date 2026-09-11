@@ -1,8 +1,8 @@
-// Aplanar requisitos — runs once, returns one item per asset the plan asks for.
+// Flatten requirements — runs once, returns one item per asset the plan asks for.
 //
 // A layout's purpose decides the orientation and the smallest acceptable width; a hero
 // photograph stretched across the slide needs far more pixels than a card thumbnail.
-const m = $('Manifest final').first().json.manifest;
+const m = $('Final manifest').first().json.manifest;
 
 function hint(layout, purpose) {
   if (purpose === 'decorative_element') return { orientation: 'landscape', minWidth: 400 };

@@ -1,8 +1,8 @@
 /**
  * Assemble the n8n workflows from their sources:
  *
- *   npm run n8n:build      → n8n/workflows/presentaciones-main.json
- *                            n8n/workflows/presentaciones-error-handler.json
+ *   npm run n8n:build      → n8n/workflows/main.json
+ *                            n8n/workflows/error-handler.json
  *
  * The Code nodes are written as real files under n8n/src/code/ so they can be read, diffed
  * and run by the offline harness; this script inlines them. The system prompt, the manifest
@@ -113,7 +113,7 @@ const CRED = {
   n8nApi: { n8nApi: { id: '', name: 'n8n API' } },
 };
 
-const CTX = "$('Contexto').first().json";
+const CTX = "$('Context').first().json";
 
 function makeWorkflow(name) {
   const nodes = [];
@@ -196,24 +196,38 @@ const claudeExtra = { credentials: CRED.anthropic, retryOnFail: true, maxTries: 
 
 // --- Main workflow ------------------------------------------------------------------------------
 function buildMain() {
-  const w = makeWorkflow('TravelXM — Presentaciones · Main');
+  const w = makeWorkflow('TravelXM — Itinerary Presentation · Main');
   const { add, link, chain, place } = w;
 
-  add('Instrucciones', 'n8n-nodes-base.stickyNote', 1, {
-    width: 520,
-    height: 420,
+  add('Instructions', 'n8n-nodes-base.stickyNote', 1, {
+    width: 640,
+    height: 560,
     content: [
-      '## TravelXM — Presentaciones',
+      '## TravelXM — Itinerary Presentation',
       '',
-      'Generado por `npm run n8n:build`; no editar el código de los nodos aquí, editar `n8n/src/`.',
+      'Turns an itinerary brief into an editable Canva deck. The Tools Suite app uploads the',
+      'PDF and calls this webhook; this workflow plans the slides with Claude, resolves the',
+      'photographs, asks the app to compile a PPTX and imports it into Canva. **The app owns',
+      'the job record** — every step here reports progress with `PATCH /api/presentations/jobs/:id`.',
       '',
-      '**Antes de activar:**',
-      '1. Nodo **Config**: poner `TOOLS_APP_URL` (la app en Vercel) y `CANVA_ENABLED`.',
-      '2. Credenciales: *Tools Suite → n8n (x-tools-secret)* en el Webhook; *n8n → Tools Suite (bearer)* en los nodos `Estado: …` y `Compilar`; *Anthropic*; *Pexels*; *Canva account* (Canva OAuth2 API: sólo Client ID y Secret, el resto viene puesto).',
-      '3. Settings → Error Workflow → *TravelXM — Presentaciones · Error handler*.',
-      '4. Activar y copiar la Production URL del Webhook a `N8N_PRESENTATION_WEBHOOK_URL` en Vercel.',
+      '### Generated file — do not edit here',
+      'Built by `npm run n8n:build` in the PDFOptimizer repo. Edit `n8n/src/code/*.js` or',
+      '`n8n/src/system-prompt.md` and redeploy with `npm run n8n:deploy`; anything typed into',
+      'these nodes is overwritten. Credentials you pick by hand *are* preserved.',
       '',
-      'El cuerpo del webhook puede llevar `dryRun: true` (omite Canva) y `force: true` (re-ejecuta un job terminado).',
+      '### Before activating',
+      '1. **Config** node: set `TOOLS_APP_URL` to the app, and `CANVA_ENABLED` to `false` if',
+      '   Canva is not connected yet.',
+      '2. Credentials: *x-tools-secret* on the Webhook; the *bearer* on every `Status: …` node',
+      '   and on `Compile`; *Anthropic*; *Pexels*; *Canva account*.',
+      '3. Settings → Error Workflow → *TravelXM — Itinerary Presentation · Error handler*, and',
+      '   a workflow timeout above 15 minutes (Claude alone can take 4).',
+      '4. Activate, then copy the Webhook Production URL into the app as',
+      '   `N8N_PRESENTATION_WEBHOOK_URL`.',
+      '',
+      '### Testing',
+      '`dryRun: true` in the webhook body skips Canva; `force: true` re-runs a job that already',
+      'finished. Both are for curl tests — the app never sends them.',
     ].join('\n'),
   });
 
@@ -225,10 +239,10 @@ function buildMain() {
     options: {},
   }, { webhookId: uuid('webhook:itinerary-presentation'), credentials: CRED.toolsSecret });
 
-  add('Validar payload', 'n8n-nodes-base.code', 2, code(codeSource('validate-payload.js')));
-  add('¿Payload válido?', 'n8n-nodes-base.if', 2.2, ifBool('$json.ok'));
-  add('Responder 400', 'n8n-nodes-base.respondToWebhook', 1.1, respond('JSON.stringify({ accepted: false, errors: $json.errors })', 400));
-  add('Responder 202', 'n8n-nodes-base.respondToWebhook', 1.1, respond('JSON.stringify({ accepted: true, jobId: $json.jobId })', 202));
+  add('Validate payload', 'n8n-nodes-base.code', 2, code(codeSource('validate-payload.js')));
+  add('Payload valid?', 'n8n-nodes-base.if', 2.2, ifBool('$json.ok'));
+  add('Respond 400', 'n8n-nodes-base.respondToWebhook', 1.1, respond('JSON.stringify({ accepted: false, errors: $json.errors })', 400));
+  add('Respond 202', 'n8n-nodes-base.respondToWebhook', 1.1, respond('JSON.stringify({ accepted: true, jobId: $json.jobId })', 202));
 
   add('Config', 'n8n-nodes-base.set', 3.4, {
     assignments: {
@@ -245,36 +259,36 @@ function buildMain() {
     includeOtherFields: false,
     options: {},
   });
-  add('Contexto', 'n8n-nodes-base.code', 2, code(codeSource('contexto.js')));
+  add('Context', 'n8n-nodes-base.code', 2, code(codeSource('context.js')));
 
-  add('Leer job', 'n8n-nodes-base.httpRequest', 4.2, {
+  add('Read job', 'n8n-nodes-base.httpRequest', 4.2, {
     method: 'GET',
     url: `={{ ${CTX}.appUrl }}/api/presentations/jobs/{{ ${CTX}.jobId }}`,
     options: { timeout: 30000 },
   }, { onError: 'continueErrorOutput' });
-  add('¿Se puede ejecutar?', 'n8n-nodes-base.code', 2, code(codeSource('can-run.js')));
-  add('¿Ejecutar?', 'n8n-nodes-base.if', 2.2, ifBool('$json.run'));
+  add('Can it run?', 'n8n-nodes-base.code', 2, code(codeSource('can-run.js')));
+  add('Run?', 'n8n-nodes-base.if', 2.2, ifBool('$json.run'));
 
-  add('Estado: planning', 'n8n-nodes-base.httpRequest', 4.2, patchJob("{ status: 'planning', step: 'Leyendo el brief y planificando las diapositivas…' }"), patchExtra);
-  add('Índice de activos', 'n8n-nodes-base.code', 2, code(codeSource('asset-index.js')));
-  add('Construir petición Claude', 'n8n-nodes-base.code', 2, code(codeSource('build-claude-request.js')));
-  add('Claude — planificar', 'n8n-nodes-base.httpRequest', 4.2, claudeCall(), claudeExtra);
-  add('Validar manifest', 'n8n-nodes-base.code', 2, code(codeSource('validate-manifest.js', { __ATTEMPT__: '1' })));
-  add('¿Manifest válido?', 'n8n-nodes-base.if', 2.2, ifBool('$json.valid'));
-  add('Construir reintento', 'n8n-nodes-base.code', 2, code(codeSource('build-retry.js')));
-  add('Claude — reintento', 'n8n-nodes-base.httpRequest', 4.2, claudeCall(), claudeExtra);
-  add('Validar manifest (2)', 'n8n-nodes-base.code', 2, code(codeSource('validate-manifest.js', { __ATTEMPT__: '2' })));
-  add('¿Manifest válido (2)?', 'n8n-nodes-base.if', 2.2, ifBool('$json.valid'));
-  add('Manifest final', 'n8n-nodes-base.code', 2, code(codeSource('manifest-final.js')));
+  add('Status: planning', 'n8n-nodes-base.httpRequest', 4.2, patchJob("{ status: 'planning', step: 'Reading the brief and planning the slides…' }"), patchExtra);
+  add('Asset index', 'n8n-nodes-base.code', 2, code(codeSource('asset-index.js')));
+  add('Build Claude request', 'n8n-nodes-base.code', 2, code(codeSource('build-claude-request.js')));
+  add('Claude — plan', 'n8n-nodes-base.httpRequest', 4.2, claudeCall(), claudeExtra);
+  add('Validate manifest', 'n8n-nodes-base.code', 2, code(codeSource('validate-manifest.js', { __ATTEMPT__: '1' })));
+  add('Manifest valid?', 'n8n-nodes-base.if', 2.2, ifBool('$json.valid'));
+  add('Build retry', 'n8n-nodes-base.code', 2, code(codeSource('build-retry.js')));
+  add('Claude — retry', 'n8n-nodes-base.httpRequest', 4.2, claudeCall(), claudeExtra);
+  add('Validate manifest (2)', 'n8n-nodes-base.code', 2, code(codeSource('validate-manifest.js', { __ATTEMPT__: '2' })));
+  add('Manifest valid (2)?', 'n8n-nodes-base.if', 2.2, ifBool('$json.valid'));
+  add('Final manifest', 'n8n-nodes-base.code', 2, code(codeSource('manifest-final.js')));
 
-  add('Estado: resolving_assets', 'n8n-nodes-base.httpRequest', 4.2, patchJob(
-    "{ status: 'resolving_assets', step: 'Buscando fotografías…', meta: $json.meta, warnings: $json.warnings }",
+  add('Status: resolving assets', 'n8n-nodes-base.httpRequest', 4.2, patchJob(
+    "{ status: 'resolving_assets', step: 'Looking for photographs…', meta: $json.meta, warnings: $json.warnings }",
   ), patchExtra);
 
-  add('Aplanar requisitos', 'n8n-nodes-base.code', 2, code(codeSource('flatten-requirements.js')));
-  add('WorkDrive y ruta', 'n8n-nodes-base.code', 2, code(codeSource('route-assets.js')));
-  add('¿Buscar en Pexels?', 'n8n-nodes-base.if', 2.2, ifEquals('$json.route', 'pexels'));
-  add('Pexels — buscar', 'n8n-nodes-base.httpRequest', 4.2, {
+  add('Flatten requirements', 'n8n-nodes-base.code', 2, code(codeSource('flatten-requirements.js')));
+  add('Route assets', 'n8n-nodes-base.code', 2, code(codeSource('route-assets.js')));
+  add('Search Pexels?', 'n8n-nodes-base.if', 2.2, ifEquals('$json.route', 'pexels'));
+  add('Pexels — search', 'n8n-nodes-base.httpRequest', 4.2, {
     method: 'GET',
     url: `={{ ${CTX}.pexelsUrl }}`,
     authentication: 'genericCredentialType',
@@ -291,113 +305,120 @@ function buildMain() {
     },
     options: { timeout: 30000, batching: { batch: { batchSize: 5, batchInterval: 1200 } } },
   }, { credentials: CRED.pexels, retryOnFail: true, maxTries: 3, waitBetweenTries: 5000, onError: 'continueRegularOutput' });
-  add('Unir', 'n8n-nodes-base.merge', 3, { mode: 'append', numberInputs: 2 });
-  add('Seleccionar activos', 'n8n-nodes-base.code', 2, code(codeSource('select-assets.js')));
+  add('Merge', 'n8n-nodes-base.merge', 3, { mode: 'append', numberInputs: 2 });
+  add('Select assets', 'n8n-nodes-base.code', 2, code(codeSource('select-assets.js')));
 
-  add('Estado: compiling', 'n8n-nodes-base.httpRequest', 4.2, patchJob(
-    "{ status: 'compiling', step: 'Construyendo la presentación…', assets: $json.assetUsage, warnings: $json.warnings }",
+  add('Status: compiling', 'n8n-nodes-base.httpRequest', 4.2, patchJob(
+    "{ status: 'compiling', step: 'Building the presentation…', assets: $json.assetUsage, warnings: $json.warnings }",
   ), patchExtra);
-  add('Compilar', 'n8n-nodes-base.httpRequest', 4.2, {
+  add('Compile', 'n8n-nodes-base.httpRequest', 4.2, {
     method: 'POST',
     url: `={{ ${CTX}.appUrl }}/api/presentations/compile`,
     authentication: 'genericCredentialType',
     genericAuthType: 'httpHeaderAuth',
     sendBody: true,
     specifyBody: 'json',
-    jsonBody: `={{ JSON.stringify({ jobId: ${CTX}.jobId, manifest: $('Manifest final').first().json.manifest, assets: $('Seleccionar activos').first().json.assets }) }}`,
+    jsonBody: `={{ JSON.stringify({ jobId: ${CTX}.jobId, manifest: $('Final manifest').first().json.manifest, assets: $('Select assets').first().json.assets }) }}`,
     options: { timeout: 300000 },
   }, { credentials: CRED.bearer, retryOnFail: true, maxTries: 2, waitBetweenTries: 10000, onError: 'continueErrorOutput' });
-  add('Estado: importing', 'n8n-nodes-base.httpRequest', 4.2, patchJob(
-    "{ status: 'importing', step: 'Importando a Canva…', pptxKey: $json.pptxKey, pptxUrl: $json.pptxUrl, manifestKey: 'presentations/jobs/' + " + CTX + ".jobId + '/manifest.json', warnings: $json.warnings }",
+  add('Status: importing', 'n8n-nodes-base.httpRequest', 4.2, patchJob(
+    "{ status: 'importing', step: 'Importing into Canva…', pptxKey: $json.pptxKey, pptxUrl: $json.pptxUrl, manifestKey: 'presentations/jobs/' + " + CTX + ".jobId + '/manifest.json', warnings: $json.warnings }",
   ), patchExtra);
 
-  add('¿Importar a Canva?', 'n8n-nodes-base.if', 2.2, ifBool(`${CTX}.dryRun`, false));
-  add('Estado: done (sin Canva)', 'n8n-nodes-base.httpRequest', 4.2, patchJob(
-    "{ status: 'done', step: 'Lista (Canva omitido).', warnings: ['Canva import was skipped; download the PowerPoint and import it by hand.'] }",
+  add('Import to Canva?', 'n8n-nodes-base.if', 2.2, ifBool(`${CTX}.dryRun`, false));
+  add('Status: done (no Canva)', 'n8n-nodes-base.httpRequest', 4.2, patchJob(
+    "{ status: 'done', step: 'Ready (Canva skipped).', warnings: ['Canva import was skipped; download the PowerPoint and import it by hand.'] }",
   ), patchExtra);
 
   // The official Canva node imports from a public URL and polls the job itself, so the deck
   // never passes through n8n and there is no wait loop to maintain. It throws on failure or
   // timeout; the error output carries that to the same normaliser as a success.
-  add('Canva — importar', '@canva/n8n-nodes-canva.canva', 1, {
+  add('Canva — import', '@canva/n8n-nodes-canva.canva', 1, {
     resource: 'designImport',
     operation: 'createImport',
-    url: "={{ $('Compilar').first().json.pptxUrl }}",
+    url: "={{ $('Compile').first().json.pptxUrl }}",
     title: `={{ ${CTX}.title }}`,
     pollInterval: 3000,
     maxWait: 180,
   }, { credentials: CRED.canva, onError: 'continueErrorOutput' });
-  add('Resultado Canva', 'n8n-nodes-base.code', 2, code(codeSource('canva-result.js')));
-  add('¿Canva OK?', 'n8n-nodes-base.if', 2.2, ifBool('$json.ok'));
-  add('Estado: done (con Canva)', 'n8n-nodes-base.httpRequest', 4.2, patchJob(
-    "{ status: 'done', step: 'Lista.', canva: { designId: $json.designId, editUrl: $json.editUrl, viewUrl: $json.viewUrl || undefined } }",
+  add('Canva result', 'n8n-nodes-base.code', 2, code(codeSource('canva-result.js')));
+  add('Canva OK?', 'n8n-nodes-base.if', 2.2, ifBool('$json.ok'));
+  add('Status: done (with Canva)', 'n8n-nodes-base.httpRequest', 4.2, patchJob(
+    "{ status: 'done', step: 'Ready.', canva: { designId: $json.designId, editUrl: $json.editUrl, viewUrl: $json.viewUrl || undefined } }",
   ), patchExtra);
-  add('Estado: done (Canva falló)', 'n8n-nodes-base.httpRequest', 4.2, patchJob(
-    "{ status: 'done', step: 'Lista (sin Canva).', warnings: ['Canva import failed: ' + ($json.error || 'unknown error') + '. Download the PowerPoint and import it by hand.'] }",
+  add('Status: done (Canva failed)', 'n8n-nodes-base.httpRequest', 4.2, patchJob(
+    "{ status: 'done', step: 'Ready (no Canva link).', warnings: ['Canva import failed: ' + ($json.error || 'unknown error') + '. Download the PowerPoint and import it by hand.'] }",
   ), patchExtra);
 
-  add('Fallo', 'n8n-nodes-base.code', 2, code(codeSource('fail.js')));
-  add('Estado: failed', 'n8n-nodes-base.httpRequest', 4.2, patchJob(
-    "{ status: 'failed', step: 'Error en ' + $json.step, error: { message: $json.message, step: $json.status } }",
+  add('Failure', 'n8n-nodes-base.code', 2, code(codeSource('fail.js')));
+  add('Status: failed', 'n8n-nodes-base.httpRequest', 4.2, patchJob(
+    "{ status: 'failed', step: 'Failed at ' + $json.step, error: { message: $json.message, step: $json.status } }",
   ), { ...patchExtra, onError: 'continueRegularOutput' });
 
   // --- wiring -----------------------------------------------------------------------------
-  chain('Webhook', 'Validar payload', '¿Payload válido?');
-  link('¿Payload válido?', 'Responder 202', { output: 0 });
-  link('¿Payload válido?', 'Responder 400', { output: 1 });
-  chain('Responder 202', 'Config', 'Contexto', 'Leer job', '¿Se puede ejecutar?', '¿Ejecutar?');
-  link('¿Ejecutar?', 'Estado: planning', { output: 0 });
-  chain('Estado: planning', 'Índice de activos', 'Construir petición Claude', 'Claude — planificar', 'Validar manifest', '¿Manifest válido?');
-  link('¿Manifest válido?', 'Manifest final', { output: 0 });
-  link('¿Manifest válido?', 'Construir reintento', { output: 1 });
-  chain('Construir reintento', 'Claude — reintento', 'Validar manifest (2)', '¿Manifest válido (2)?');
-  link('¿Manifest válido (2)?', 'Manifest final', { output: 0 });
-  link('¿Manifest válido (2)?', 'Fallo', { output: 1 });
-  chain('Manifest final', 'Estado: resolving_assets', 'Aplanar requisitos', 'WorkDrive y ruta', '¿Buscar en Pexels?');
-  link('¿Buscar en Pexels?', 'Pexels — buscar', { output: 0 });
-  link('Pexels — buscar', 'Unir', { input: 0 });
-  link('¿Buscar en Pexels?', 'Unir', { output: 1, input: 1 });
-  chain('Unir', 'Seleccionar activos', 'Estado: compiling', 'Compilar', 'Estado: importing', '¿Importar a Canva?');
-  link('¿Importar a Canva?', 'Canva — importar', { output: 0 });
-  link('¿Importar a Canva?', 'Estado: done (sin Canva)', { output: 1 });
-  chain('Canva — importar', 'Resultado Canva', '¿Canva OK?');
-  link('Canva — importar', 'Resultado Canva', { output: 1 }); // import failed or timed out
-  link('¿Canva OK?', 'Estado: done (con Canva)', { output: 0 });
-  link('¿Canva OK?', 'Estado: done (Canva falló)', { output: 1 });
+  chain('Webhook', 'Validate payload', 'Payload valid?');
+  link('Payload valid?', 'Respond 202', { output: 0 });
+  link('Payload valid?', 'Respond 400', { output: 1 });
+  chain('Respond 202', 'Config', 'Context', 'Read job', 'Can it run?', 'Run?');
+  link('Run?', 'Status: planning', { output: 0 });
+  chain('Status: planning', 'Asset index', 'Build Claude request', 'Claude — plan', 'Validate manifest', 'Manifest valid?');
+  link('Manifest valid?', 'Final manifest', { output: 0 });
+  link('Manifest valid?', 'Build retry', { output: 1 });
+  chain('Build retry', 'Claude — retry', 'Validate manifest (2)', 'Manifest valid (2)?');
+  link('Manifest valid (2)?', 'Final manifest', { output: 0 });
+  link('Manifest valid (2)?', 'Failure', { output: 1 });
+  chain('Final manifest', 'Status: resolving assets', 'Flatten requirements', 'Route assets', 'Search Pexels?');
+  link('Search Pexels?', 'Pexels — search', { output: 0 });
+  link('Pexels — search', 'Merge', { input: 0 });
+  link('Search Pexels?', 'Merge', { output: 1, input: 1 });
+  chain('Merge', 'Select assets', 'Status: compiling', 'Compile', 'Status: importing', 'Import to Canva?');
+  link('Import to Canva?', 'Canva — import', { output: 0 });
+  link('Import to Canva?', 'Status: done (no Canva)', { output: 1 });
+  chain('Canva — import', 'Canva result', 'Canva OK?');
+  link('Canva — import', 'Canva result', { output: 1 }); // import failed or timed out
+  link('Canva OK?', 'Status: done (with Canva)', { output: 0 });
+  link('Canva OK?', 'Status: done (Canva failed)', { output: 1 });
   // Error outputs (second output of nodes with onError: continueErrorOutput).
-  for (const n of ['Leer job', 'Claude — planificar', 'Claude — reintento', 'Compilar']) link(n, 'Fallo', { output: 1 });
-  chain('Fallo', 'Estado: failed');
+  for (const n of ['Read job', 'Claude — plan', 'Claude — retry', 'Compile']) link(n, 'Failure', { output: 1 });
+  chain('Failure', 'Status: failed');
 
   // --- layout ----------------------------------------------------------------------------
   const X = 260;
   const row = (y, ...names) => names.forEach((n, i) => place(n, i * X, y));
-  place('Instrucciones', -640, -80);
-  row(0, 'Webhook', 'Validar payload', '¿Payload válido?', 'Responder 202', 'Config', 'Contexto', 'Leer job', '¿Se puede ejecutar?', '¿Ejecutar?', 'Estado: planning', 'Índice de activos', 'Construir petición Claude', 'Claude — planificar', 'Validar manifest', '¿Manifest válido?', 'Manifest final');
-  place('Responder 400', 3 * X, 200);
-  row(220, ...Array(15).fill(null), 'Construir reintento', 'Claude — reintento', 'Validar manifest (2)', '¿Manifest válido (2)?');
-  row(460, 'Estado: resolving_assets', 'Aplanar requisitos', 'WorkDrive y ruta', '¿Buscar en Pexels?', 'Pexels — buscar', 'Unir', 'Seleccionar activos', 'Estado: compiling', 'Compilar', 'Estado: importing', '¿Importar a Canva?', 'Canva — importar', 'Resultado Canva', '¿Canva OK?', 'Estado: done (con Canva)');
-  place('Estado: done (sin Canva)', 11 * X, 680);
-  place('Estado: done (Canva falló)', 14 * X, 680);
-  row(900, ...Array(8).fill(null), 'Fallo', 'Estado: failed');
+  place('Instructions', -640, -80);
+  row(0, 'Webhook', 'Validate payload', 'Payload valid?', 'Respond 202', 'Config', 'Context', 'Read job', 'Can it run?', 'Run?', 'Status: planning', 'Asset index', 'Build Claude request', 'Claude — plan', 'Validate manifest', 'Manifest valid?', 'Final manifest');
+  place('Respond 400', 3 * X, 200);
+  row(220, ...Array(15).fill(null), 'Build retry', 'Claude — retry', 'Validate manifest (2)', 'Manifest valid (2)?');
+  row(460, 'Status: resolving assets', 'Flatten requirements', 'Route assets', 'Search Pexels?', 'Pexels — search', 'Merge', 'Select assets', 'Status: compiling', 'Compile', 'Status: importing', 'Import to Canva?', 'Canva — import', 'Canva result', 'Canva OK?', 'Status: done (with Canva)');
+  place('Status: done (no Canva)', 11 * X, 680);
+  place('Status: done (Canva failed)', 14 * X, 680);
+  row(900, ...Array(8).fill(null), 'Failure', 'Status: failed');
   return w.finish();
 }
 
 // --- Error handler workflow ------------------------------------------------------------------
 function buildErrorHandler() {
-  const w = makeWorkflow('TravelXM — Presentaciones · Error handler');
+  const w = makeWorkflow('TravelXM — Itinerary Presentation · Error handler');
   const { add, chain, link, place } = w;
-  add('Instrucciones', 'n8n-nodes-base.stickyNote', 1, {
-    width: 460,
-    height: 260,
+  add('Instructions', 'n8n-nodes-base.stickyNote', 1, {
+    width: 520,
+    height: 320,
     content: [
       '## Error handler',
       '',
-      'Se ejecuta cuando el workflow principal falla sin pasar por su propio nodo *Fallo*.',
-      'Lee la ejecución fallida por la API de n8n, localiza el `jobId` y marca el job como `failed` en la app.',
+      'Runs when the Main workflow dies somewhere its own `Failure` branch cannot catch — a',
+      'Code node throwing, or the instance killing a run. It reads the failed execution back',
+      'through the n8n API, digs the `jobId` out of it and marks that job `failed` in the app,',
+      'so the page stops waiting and shows a reason instead of spinning.',
       '',
-      '**Config**: `TOOLS_APP_URL` (la app) y `N8N_BASE_URL` (esta instancia, p. ej. https://xxx.app.n8n.cloud). Credenciales: *n8n API* y *n8n → Tools Suite (bearer)*.',
+      '**Config**: `TOOLS_APP_URL` (the app) and `N8N_BASE_URL` (this instance).',
+      '**Credentials**: *n8n API* and the *bearer*.',
+      '',
+      'Set it on the Main workflow under Settings → Error Workflow. Generated by',
+      '`npm run n8n:build`; do not edit here.',
     ].join('\n'),
   });
+
   add('Error Trigger', 'n8n-nodes-base.errorTrigger', 1, {});
   add('Config', 'n8n-nodes-base.set', 3.4, {
     assignments: {
@@ -409,7 +430,7 @@ function buildErrorHandler() {
     includeOtherFields: true,
     options: {},
   });
-  add('Leer ejecución', 'n8n-nodes-base.httpRequest', 4.2, {
+  add('Read execution', 'n8n-nodes-base.httpRequest', 4.2, {
     method: 'GET',
     url: "={{ $('Config').first().json.N8N_BASE_URL }}/api/v1/executions/{{ $('Error Trigger').first().json.execution.id }}",
     authentication: 'predefinedCredentialType',
@@ -418,9 +439,9 @@ function buildErrorHandler() {
     queryParameters: { parameters: [{ name: 'includeData', value: 'true' }] },
     options: { timeout: 30000 },
   }, { credentials: CRED.n8nApi, onError: 'continueRegularOutput' });
-  add('Localizar job', 'n8n-nodes-base.code', 2, code(codeSource('error-find-job.js')));
-  add('¿Job encontrado?', 'n8n-nodes-base.if', 2.2, ifBool('$json.found'));
-  add('Estado: failed', 'n8n-nodes-base.httpRequest', 4.2, {
+  add('Find job', 'n8n-nodes-base.code', 2, code(codeSource('error-find-job.js')));
+  add('Job found?', 'n8n-nodes-base.if', 2.2, ifBool('$json.found'));
+  add('Status: failed', 'n8n-nodes-base.httpRequest', 4.2, {
     method: 'PATCH',
     url: "={{ $('Config').first().json.TOOLS_APP_URL }}/api/presentations/jobs/{{ $json.jobId }}",
     authentication: 'genericCredentialType',
@@ -431,16 +452,16 @@ function buildErrorHandler() {
     options: { timeout: 30000 },
   }, { credentials: CRED.bearer, retryOnFail: true, maxTries: 3, waitBetweenTries: 2000 });
 
-  chain('Error Trigger', 'Config', 'Leer ejecución', 'Localizar job', '¿Job encontrado?');
-  link('¿Job encontrado?', 'Estado: failed', { output: 0 });
-  place('Instrucciones', -520, -60);
-  ['Error Trigger', 'Config', 'Leer ejecución', 'Localizar job', '¿Job encontrado?', 'Estado: failed'].forEach((n, i) => place(n, i * 260, 0));
+  chain('Error Trigger', 'Config', 'Read execution', 'Find job', 'Job found?');
+  link('Job found?', 'Status: failed', { output: 0 });
+  place('Instructions', -520, -60);
+  ['Error Trigger', 'Config', 'Read execution', 'Find job', 'Job found?', 'Status: failed'].forEach((n, i) => place(n, i * 260, 0));
   return w.finish();
 }
 
 const main = buildMain();
 const errorHandler = buildErrorHandler();
-writeFileSync(join(outDir, 'presentaciones-main.json'), JSON.stringify(main, null, 2) + '\n');
-writeFileSync(join(outDir, 'presentaciones-error-handler.json'), JSON.stringify(errorHandler, null, 2) + '\n');
+writeFileSync(join(outDir, 'main.json'), JSON.stringify(main, null, 2) + '\n');
+writeFileSync(join(outDir, 'error-handler.json'), JSON.stringify(errorHandler, null, 2) + '\n');
 writeFileSync(join(outDir, 'system-prompt.generated.md'), systemPrompt + '\n');
 console.log(`main: ${main.nodes.length} nodes; error handler: ${errorHandler.nodes.length} nodes; system prompt ${systemPrompt.length} chars → ${outDir}`);

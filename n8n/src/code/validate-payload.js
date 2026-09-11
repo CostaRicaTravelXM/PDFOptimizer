@@ -1,4 +1,4 @@
-// Validar payload — runs once. The webhook already checked the shared secret; this checks
+// Validate payload — runs once. The webhook already checked the shared secret; this checks
 // the shape so a bad request is answered with 400 before any work starts.
 const body = $input.first().json.body || {};
 const errors = [];

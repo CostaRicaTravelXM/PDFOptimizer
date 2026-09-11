@@ -1,4 +1,4 @@
-// Localizar job — runs once in the error-handler workflow. The Error Trigger only knows the
+// Find job — runs once in the error-handler workflow. The Error Trigger only knows the
 // execution; the job id is dug out of the failed execution's data so the app can be told.
 const err = $('Error Trigger').first().json;
 const exec = $input.first().json || {};
@@ -12,7 +12,7 @@ function firstJson(nodeName) {
 }
 
 let jobId = '';
-const ctx = firstJson('Contexto');
+const ctx = firstJson('Context');
 if (ctx && ctx.jobId) jobId = ctx.jobId;
 if (!jobId) {
   const wh = firstJson('Webhook');

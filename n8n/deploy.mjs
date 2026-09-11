@@ -169,7 +169,7 @@ for (const w of existing) {
   if (pf === folder.id) inFolder.set(w.name, w);
 }
 
-const files = ['presentaciones-error-handler.json', 'presentaciones-main.json'];
+const files = ['error-handler.json', 'main.json'];
 const deployed = [];
 for (const file of files) {
   const wf = JSON.parse(readFileSync(join(here, 'workflows', file), 'utf8'));
@@ -202,7 +202,7 @@ for (const file of files) {
 }
 
 if (activate && !dryRun) {
-  const main = deployed.find((d) => d.file === 'presentaciones-main.json');
+  const main = deployed.find((d) => d.file === 'main.json');
   if (main) {
     await api('POST', `/workflows/${main.saved.id}/activate`);
     console.log(`\nactivated ${main.wf.name}`);

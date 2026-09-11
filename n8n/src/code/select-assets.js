@@ -1,4 +1,4 @@
-// Seleccionar activos — runs once over the merged items. Turns search results into the
+// Select assets — runs once over the merged items. Turns search results into the
 // asset map the compiler expects and the audit records the job keeps.
 //
 // The HTTP node replaced each Pexels item's data with the API response, so the requirement
@@ -44,7 +44,7 @@ function downloadUrl(req, ph) {
 for (let i = 0; i < items.length; i++) {
   let req;
   try {
-    req = $('WorkDrive y ruta').itemMatching(i).json;
+    req = $('Route assets').itemMatching(i).json;
   } catch (e) {
     warnings.push('a search result could not be matched to its slide');
     continue;
@@ -69,8 +69,12 @@ for (let i = 0; i < items.length; i++) {
       assetUsage.push({ slideId: req.slideId, purpose: req.purpose, source: 'pexels', provider: 'pexels', providerImageId: String(ph.id), sourceUrl: ph.url, downloadUrl: url, photographer: ph.photographer, licenseUrl: 'https://www.pexels.com/license/', query: req.query, retrievedAt: now });
       continue;
     }
-    warnings.push(res.error
-      ? `${req.slideId}: the stock photo search failed (${res.error.message || 'error'}); a placeholder is used`
+    // Carry the real reason through to the job record: "the search failed" alone sends
+    // someone hunting in the wrong place, whereas a code like ERR_INVALID_HTTP_TOKEN names
+    // the credential as the culprit.
+    const why = res.error ? res.error.message || res.error.code || 'error' : null;
+    warnings.push(why
+      ? `${req.slideId}: the stock photo search failed (${why}); a placeholder is used`
       : `${req.slideId}: no suitable stock photo for "${req.query}"; a placeholder is used`);
   } else if (req.overridden) {
     warnings.push(`${req.slideId}: ${req.overridden}; a placeholder is used`);

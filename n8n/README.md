@@ -1,190 +1,216 @@
-# n8n — Presentaciones de itinerario
+# n8n — Itinerary Presentation
 
-Workflows que convierten un brief de itinerario en una presentación editable en Canva.
-La app (`/tools/itinerary-presentation`) sube el PDF, extrae el texto y llama al webhook;
-n8n planifica las diapositivas con Claude, resuelve las fotos, pide a la app que compile el
-PPTX y lo importa en Canva. La app es la única que escribe el registro del job: n8n informa
-cada paso con `PATCH /api/presentations/jobs/<id>`.
+Two workflows that turn an itinerary brief into an editable Canva deck. The Tools Suite app
+(`/tools/itinerary-presentation`) uploads the PDF, extracts its text and calls the webhook;
+n8n plans the slides with Claude, resolves the photographs, asks the app to compile a PPTX,
+and imports it into Canva.
 
-**Ya desplegados** en `blocktxm.app.n8n.cloud`, proyecto *Personal* → carpeta
-*TravelXM Workflows* (inactivos hasta terminar la configuración):
+**The app owns the job record.** n8n never writes to the bucket. Every step reports progress
+with `PATCH /api/presentations/jobs/:id`, so there is one writer, one merge policy, and the
+workflow needs no storage credentials.
 
-| Workflow | Id | Enlace |
+Deployed on `blocktxm.app.n8n.cloud`, project *Personal* → folder *TravelXM Workflows*:
+
+| Workflow | Id | Link |
 |---|---|---|
-| TravelXM — Presentaciones · Main | `VympOEgV8uXSA6LL` | https://blocktxm.app.n8n.cloud/workflow/VympOEgV8uXSA6LL |
-| TravelXM — Presentaciones · Error handler | `4tRHOBX8n0SuFGC2` | https://blocktxm.app.n8n.cloud/workflow/4tRHOBX8n0SuFGC2 |
+| TravelXM — Itinerary Presentation · Main | `VympOEgV8uXSA6LL` | https://blocktxm.app.n8n.cloud/workflow/VympOEgV8uXSA6LL |
+| TravelXM — Itinerary Presentation · Error handler | `4tRHOBX8n0SuFGC2` | https://blocktxm.app.n8n.cloud/workflow/4tRHOBX8n0SuFGC2 |
 
-Archivos:
+## The files are generated — do not edit inside n8n
 
-| Archivo | Qué es |
+```
+npm run n8n:build     # sources  ->  workflows/*.json
+npm run n8n:test      # run every Code node outside n8n
+npm run n8n:deploy    # push to the instance
+```
+
+| Path | What it is |
 |---|---|
-| `workflows/presentaciones-main.json` | Workflow principal (webhook → Claude → fotos → compilar → Canva) |
-| `workflows/presentaciones-error-handler.json` | Marca el job como fallido si el principal muere fuera de su propio manejo de errores |
-| `workflows/system-prompt.generated.md` | El system prompt tal como se envía a Claude (generado, sólo para leer) |
-| `src/` | Fuentes: prompt, código de cada nodo Code, constantes compartidas con la app |
-| `create-secrets.mjs` | Genera y crea en n8n las dos credenciales de secreto compartido |
-| `fixtures/sample-payload.json` | Un cuerpo de webhook real (con `dryRun: true`) para probar |
-| `fixtures/sample-claude-response.json` | Una respuesta de Claude válida para fijar (*pin*) en el nodo *Claude — planificar* |
+| `src/system-prompt.md` | The planner's system prompt, with `{{PLACEHOLDERS}}` filled at build time |
+| `src/code/*.js` | One file per Code node, real JavaScript you can read and diff |
+| `src/constants-entry.ts` | Re-exports the app constants the build injects |
+| `build.mjs` | Assembles the workflow JSON: node list, wiring, layout, injections |
+| `deploy.mjs` | Creates or updates the workflows through the n8n public API |
+| `create-secrets.mjs` | One-off: generates the two shared-secret credentials |
+| `test-code.mjs` | Offline harness with a fake n8n context |
+| `workflows/*.json` | Build output. Importable, but regenerated on every build |
+| `fixtures/` | A sample webhook body and a valid Claude response for pinning |
 
-**Los JSON se generan**: `npm run n8n:build`. No editar el código dentro de n8n; editar
-`src/code/*.js` o `src/system-prompt.md` y volver a generar. Los límites de texto, los
-layouts y el JSON Schema salen de `lib/presentations/` de la app, así el prompt, el
-validador y el compilador no se desalinean.
+Anything typed into a node in the n8n editor is overwritten on the next deploy. Credentials
+you select by hand are the exception — `deploy.mjs` keeps those.
 
-## Flujo
+Copy limits, layout ids, brand colours and the manifest JSON Schema are injected from
+`lib/presentations/` and `lib/server/presentations/brand.ts`, so the prompt, the validator and
+the compiler cannot drift apart.
 
-```
-Webhook (POST /itinerary-presentation, header x-tools-secret)
-  └─ Validar payload ─┬─ no → Responder 400
-                      └─ sí → Responder 202 → Config → Contexto → Leer job → ¿Ejecutar?
-        Estado: planning
-        Índice de activos (stub hasta WorkDrive)
-        Construir petición Claude → Claude — planificar → Validar manifest
-              └─ inválido → Construir reintento → Claude — reintento → Validar manifest (2)
-        Manifest final → Estado: resolving_assets
-        Aplanar requisitos → WorkDrive y ruta → ¿Buscar en Pexels? → Pexels — buscar
-        Unir → Seleccionar activos → Estado: compiling
-        Compilar (POST /api/presentations/compile en la app) → Estado: importing
-        ¿Importar a Canva? ─ no (dryRun / CANVA_ENABLED=false) → Estado: done (sin Canva)
-                           └ sí → Canva — importar (nodo oficial: importa desde la URL
-                                  pública del PPTX y espera) → Resultado Canva → ¿Canva OK?
-                                      → sí → Estado: done (con Canva)
-                                      → no → Estado: done (Canva falló)
-Cualquier salida de error ──────────────────────────► Fallo → Estado: failed
-```
-
-Una ejecución por job. Reenviar el mismo webhook no vuelve a ejecutar un job terminado o en
-curso (`force: true` en el cuerpo lo fuerza).
-
-## Instalación
-
-### 1. Credenciales (crear antes de importar)
-
-| Nombre exacto | Tipo en n8n | Estado | Valor |
-|---|---|---|---|
-| `Tools Suite → n8n (x-tools-secret)` | Header Auth | ✅ creada | Name `x-tools-secret`; el mismo valor va en Vercel como `N8N_SHARED_SECRET` |
-| `n8n → Tools Suite (bearer)` | Header Auth | ✅ creada | Name `Authorization`, `Bearer <secreto>`; el secreto va en Vercel como `PRESENTATIONS_COMPILE_SECRET` |
-| `Anthropic account TravelXM` | Anthropic | ✅ existe | API key de Anthropic |
-| `Pexels` | Header Auth | ❌ falta | Name `Authorization`, Value = la API key de Pexels (sin "Bearer") |
-| `Canva account` | Canva OAuth2 API | ❌ falta | Ver §Canva; sólo Client ID y Secret |
-| `n8n API` | n8n API | ❌ falta | Una API key de esta instancia (Settings → n8n API); sólo la usa el error handler |
-
-Las dos primeras las generó `node n8n/create-secrets.mjs` (secretos aleatorios, creados una
-sola vez). Sus valores se pueden volver a ver en la UI de credenciales de n8n; tienen que
-coincidir con los de Vercel.
-
-Los nombres importan: el JSON referencia las credenciales por nombre y n8n las enlaza al
-importar cuando coinciden. Si no coinciden, abrir cada nodo y elegirla a mano.
-
-### 2. Importar
-
-**Por la interfaz:** Workflows → *Import from File*, primero
-`presentaciones-error-handler.json`, después `presentaciones-main.json`.
-
-**Por la API:** con una API key de n8n,
+## Main workflow, node by node
 
 ```
-N8N_BASE_URL=https://xxx.app.n8n.cloud N8N_API_KEY=... npm run n8n:deploy
+Webhook ─ Validate payload ─ Payload valid? ─┬─ no ─ Respond 400
+                                             └─ yes ─ Respond 202 (everything below runs after the reply)
+Config ─ Context ─ Read job ─ Can it run? ─ Run?
+  Status: planning
+  Asset index                         (stub until WorkDrive exists)
+  Build Claude request ─ Claude — plan ─ Validate manifest ─ Manifest valid?
+        └─ no ─ Build retry ─ Claude — retry ─ Validate manifest (2) ─ Manifest valid (2)?
+  Final manifest ─ Status: resolving assets
+  Flatten requirements ─ Route assets ─ Search Pexels? ─ Pexels — search
+  Merge ─ Select assets ─ Status: compiling
+  Compile ─ Status: importing ─ Import to Canva?
+        ├─ no  ─ Status: done (no Canva)
+        └─ yes ─ Canva — import ─ Canva result ─ Canva OK? ─┬─ Status: done (with Canva)
+                                                            └─ Status: done (Canva failed)
+any error output ───────────────────────────────► Failure ─ Status: failed
 ```
 
-crea o actualiza los dos workflows **dentro de la carpeta `TravelXM Workflows`**, buscándolos
-por nombre (así no se duplican al re-desplegar) y enlazando las credenciales que existan por
-su nombre, para que los nodos queden ya configurados. `--dry-run` enseña lo que haría sin
-tocar nada; `--activate` activa el principal; `--folder` / `--project` cambian el destino.
+| Node | What it does |
+|---|---|
+| **Webhook** | `POST /itinerary-presentation`, header auth. A wrong secret is rejected as 403 before an execution is even created. |
+| **Validate payload** | Checks the enums, the required fields, the job id format and that the brief has at least 200 characters. |
+| **Respond 202 / 400** | Answers the app immediately; the rest of the workflow runs after the response. |
+| **Config** | The only per-environment settings: app URL, model, effort, Canva on/off, and the three API base URLs. |
+| **Context** | Flattens everything later nodes need into one item, so expressions read `$('Context').first().json.x`. |
+| **Read job** | Fetches the job record from the app. Doubles as a reachability check. |
+| **Can it run? / Run?** | Idempotency: a job that is already running or finished is skipped unless the body says `force`. |
+| **Status: …** | Nine `PATCH` calls that move the job through the timeline the page shows. |
+| **Asset index** | Today returns an empty list. When the WorkDrive indexer lands it returns the approved assets and nothing downstream changes. |
+| **Build Claude request** | Assembles the Messages API body: cached system prompt, cached brief, job parameters, asset index, and `output_config.format` with the manifest schema. |
+| **Claude — plan / retry** | The planning call, and one retry that receives its own answer plus the list of validation errors. |
+| **Validate manifest (1 / 2)** | The business rules the schema cannot express. Pass 1 is strict and reports errors for the retry; pass 2 repairs what it safely can and only fails on what it cannot. |
+| **Final manifest** | Picks whichever pass produced a usable manifest and carries the token usage. |
+| **Flatten requirements** | One item per image the plan asks for, with the orientation and minimum width its layout needs. |
+| **Route assets** | The pluggable WorkDrive step: approved match wins; a named property or brand element without one gets a placeholder, never a stock photo; anything generic goes to Pexels. |
+| **Pexels — search** | Batched 5 per 1.2 s to respect the rate limit. A failure here degrades to a placeholder rather than failing the job. |
+| **Select assets** | Scores, filters and de-duplicates the results, then builds the asset map and the licensing audit records. |
+| **Compile** | `POST /api/presentations/compile` on the app, which renders the PPTX and writes it to the bucket. |
+| **Canva — import** | The official Canva node, *Design Import → Import From URL*. It takes the public PPTX URL and polls the import job itself. |
+| **Canva result / Canva OK?** | Normalises success and failure into one shape. A Canva problem is not a failed job. |
+| **Failure / Status: failed** | Every error output lands here; it names the node and maps it to the timeline row the page should mark red. |
 
-### 3. Configurar
+### Design decisions worth knowing
 
-0. Crear las credenciales que faltan (`Pexels`, `Canva Connect`, `n8n API`) con esos nombres
-   exactos y volver a ejecutar `npm run n8n:deploy`, o elegirlas a mano en los nodos
-   *Pexels — buscar*, *Canva — crear import*, *Canva — consultar* y *Leer ejecución*.
-1. En el principal, nodo **Config**: `TOOLS_APP_URL` = la app en Vercel (sin barra final),
-   `CANVA_ENABLED` = `true` cuando la credencial de Canva esté conectada; `CLAUDE_MODEL`
-   (`claude-opus-5`) y `CLAUDE_EFFORT` (`medium`) se pueden ajustar tras el piloto.
-2. En el error handler, nodo **Config**: `TOOLS_APP_URL` y `N8N_BASE_URL` (esta instancia).
-3. Principal → Settings → *Error Workflow* → *TravelXM — Presentaciones · Error handler*.
-   Si el plan lo permite, *Timeout Workflow* por encima de 15 minutos: Claude tarda de 1 a 4.
-4. Activar el principal. Copiar la **Production URL** del Webhook a
-   `N8N_PRESENTATION_WEBHOOK_URL` en Vercel, junto con `N8N_SHARED_SECRET` y
-   `PRESENTATIONS_COMPILE_SECRET` (los mismos valores que las credenciales).
+- **One execution per job.** No sub-workflows: n8n Cloud bills per execution.
+- **`Respond 202` comes early** so the app is never left waiting on a 2–6 minute run.
+- **Everything degrades rather than fails.** No photo becomes a branded placeholder; no Canva
+  becomes a PowerPoint download. The deck is never lost after it has been built.
+- **A named hotel never gets a stock photo.** The rule is enforced twice: in the prompt, and
+  again in `Route assets`, which overrides the planner if it tries.
 
-## Canva
+## The planning call
 
-La importación la hace el **nodo oficial de Canva** (`@canva/n8n-nodes-canva`, ya instalado en
-la instancia), recurso *Design Import* → *Import From URL*. Le pasamos la URL pública del
-PPTX en R2 y el título; él crea el trabajo de importación y **espera a que termine** (sondea
-cada 3 s, hasta 180 s). Por eso no hay descarga del binario, ni cabecera `Import-Metadata`, ni
-bucle de espera: un solo nodo.
+- `claude-opus-5`, `max_tokens: 32000`, `output_config.effort: medium`. No `temperature` —
+  it is rejected on this model.
+- **Structured outputs** with the manifest JSON Schema, so the answer is schema-valid JSON.
+  Two API rules shaped that schema: an `enum` may not sit on a nullable type, and a schema may
+  carry at most 16 union-typed parameters. Nothing is nullable as a result — an unused text
+  field is `""` and an unused list is `[]`, and `Validate manifest` strips both.
+- **Prompt caching** on the system prompt and on the brief, so the retry re-reads both from
+  cache. Check `usage.cache_read_input_tokens` in `job.meta`.
+- Roughly **$0.25 per deck**; a retry adds little because the input is cached.
 
-1. [Canva Developers](https://www.canva.com/developers/) → *Your integrations* → crear una
-   integración **privada** (sólo el equipo de TravelXM puede autorizarla).
-2. *Authentication* → Redirect URL:
-   `https://blocktxm.app.n8n.cloud/rest/oauth2-credential/callback`.
-3. Generar el *client secret* (se muestra una sola vez).
-4. En n8n, credencial **Canva OAuth2 API** llamada `Canva account`: pegar Client ID y Client
-   Secret y pulsar *Connect my account* con el usuario de Canva que será dueño de los diseños.
-   El tipo de concesión (PKCE), las URLs y los permisos ya vienen puestos por el nodo; no hay
-   que escribirlos. Los permisos incluyen `design:content:write`, que es el que necesita la
-   importación.
-5. `CANVA_ENABLED=true` en el nodo Config (o `npm run n8n:deploy -- --canva=true`).
+## Setup
 
-Canva rota el refresh token en cada renovación; que sólo esta credencial lo use.
+### Credentials
 
-Si la importación falla o tarda más de 180 s, el nodo lanza error, su salida de error va al
-mismo normalizador y el job termina como `done` **sin** enlace de Canva: la app ofrece
-descargar el PowerPoint. Nunca se pierde el trabajo hecho.
+Referenced by name; `deploy.mjs` wires them automatically when the names match.
 
-## Contrato
+| Name | Type | Notes |
+|---|---|---|
+| `Tools Suite → n8n (x-tools-secret)` | Header Auth | Name `x-tools-secret`; same value as the app's `N8N_SHARED_SECRET` |
+| `n8n → Tools Suite (bearer)` | Header Auth | Name `Authorization`, value `Bearer <PRESENTATIONS_COMPILE_SECRET>` |
+| `Anthropic account TravelXM` | Anthropic | API key |
+| `Pexels` | Header Auth | **Name must be exactly `Authorization`**; value is the raw key, no `Bearer` |
+| `Canva account` | Canva OAuth2 API | Only Client ID and Secret; the node supplies the rest |
+| `n8n API` | n8n API | Error handler only |
 
-Cuerpo del webhook (lo envía la app; `dryRun` y `force` son opcionales, para pruebas):
+The first two were generated by `node n8n/create-secrets.mjs`; their values must match Vercel.
+
+### Canva
+
+1. [Canva Developers](https://www.canva.com/developers/) → create a **private** integration.
+2. Redirect URL: `https://blocktxm.app.n8n.cloud/rest/oauth2-credential/callback`.
+3. Generate the client secret (shown once).
+4. In n8n create a **Canva OAuth2 API** credential named `Canva account`, paste the id and
+   secret, and press *Connect my account* as the user who should own the designs. PKCE, the
+   OAuth URLs and the scopes (including `design:content:write`) come from the node.
+5. Set `CANVA_ENABLED=true` in Config.
+
+Canva rotates the refresh token on every renewal, so only this credential should use it.
+
+### Deploy
+
+```
+npm run n8n:deploy -- --dry-run                       # show what would change
+npm run n8n:deploy -- --app-url=https://…             # set Config's TOOLS_APP_URL
+npm run n8n:deploy -- --canva=false --activate        # skip Canva, activate Main
+```
+
+Needs `N8N_BASE_URL` and `N8N_API_KEY` in the environment or `.env.local`. Workflows are
+matched by name inside the *TravelXM Workflows* folder, so re-running updates them instead of
+creating copies.
+
+Afterwards, in the editor: set Settings → Error Workflow on Main, raise the workflow timeout
+above 15 minutes, activate, and copy the Webhook Production URL into Vercel as
+`N8N_PRESENTATION_WEBHOOK_URL`.
+
+## Contract
+
+The app sends:
 
 ```json
-{ "jobId": "20260910-120000-abc123", "title": "…", "style": "immersive|minimal",
-  "audience": "client|agent|internal|mixed", "language": "en|es", "destination": "…",
+{ "jobId": "20260911-204414-f12c39", "title": "…", "style": "minimal|immersive",
+  "audience": "agent|internal|client|mixed", "language": "en|es", "destination": "…",
   "clientName": "", "travelDates": "", "travelers": "", "notes": "",
-  "pdfKey": "…", "pdfUrl": "…", "pageCount": 3, "textChars": 1536, "textLow": false,
-  "textKey": "…", "text": "…texto del PDF…", "dryRun": true, "force": false }
+  "pdfKey": "…", "pdfUrl": "…", "pageCount": 3, "textChars": 7883, "textLow": false,
+  "textKey": "…", "text": "…the PDF's text…" }
 ```
 
-Respuestas: `202 {"accepted":true,"jobId"}` de inmediato; `400 {"accepted":false,"errors"}`
-si faltan campos o el texto tiene menos de 200 caracteres; `403` si el header no coincide.
+`dryRun: true` skips Canva and `force: true` re-runs a finished job; the app sends neither.
+Replies are `202 {accepted, jobId}`, `400 {accepted:false, errors}` or `403`.
 
-Lo que n8n envía a la app está definido en `lib/presentations/types.ts` (`JobPatch`) y
-`lib/presentations/manifest.ts` (`CompileRequest`); ver el README de la app.
+What n8n sends back is `JobPatch` in `lib/presentations/types.ts` and `CompileRequest` in
+`lib/presentations/manifest.ts`. See the app's README.
 
-## Probar
+## Testing
 
-Sin n8n, la lógica de todos los nodos Code:
+Every Code node, with no n8n and no cost:
 
 ```
 npm run n8n:test
 ```
 
-Con n8n, sin gastar en Canva:
+A real run without touching Canva:
 
 ```
-curl -i -X POST "https://<instancia>.app.n8n.cloud/webhook/itinerary-presentation" \
-  -H "Content-Type: application/json" -H "x-tools-secret: <secreto>" \
+curl -i -X POST "https://blocktxm.app.n8n.cloud/webhook/itinerary-presentation" \
+  -H "Content-Type: application/json" -H "x-tools-secret: <secret>" \
   -d @n8n/fixtures/sample-payload.json
 ```
 
-El `jobId` del fixture no existe en la app, así que *Leer job* responderá 404 y la ejecución
-terminará en *Fallo* sin nada que marcar. Para una prueba completa: crear un job desde la app
-(o con curl contra `/api/presentations/jobs`, ver README de la app), poner su `jobId` en el
-cuerpo y enviar; el registro recorre `planning → resolving_assets → compiling → importing →
-done` y termina con `pptxUrl`.
+The fixture's `jobId` does not exist, so `Read job` returns 404 and the run stops there. For a
+full pass, create a job in the app, put its id in the body, and watch the record move through
+`planning → resolving assets → compiling → importing → done`.
 
-Para probar el validador sin llamar a Claude: en *Claude — planificar*, fijar (*pin*) el
-contenido de `fixtures/sample-claude-response.json` y ejecutar manualmente.
+To exercise the validator without paying for a planning call, pin
+`fixtures/sample-claude-response.json` onto *Claude — plan* and execute manually.
 
-Caminos de fallo que conviene ver una vez: header incorrecto (403); texto corto (400);
-`TOOLS_APP_URL` apuntando a un 500 (job `failed` en `compiling`); credencial de Canva
-desconectada (job `done` con aviso).
+## Troubleshooting
 
-## Costes y límites
+| Symptom | Cause |
+|---|---|
+| Job fails instantly, "The planning workflow could not be reached" | The Main workflow is not active, so the production webhook 404s. |
+| Job sits at "Received" forever | n8n cannot reach `TOOLS_APP_URL`. Check the Config node; localhost is not reachable from n8n Cloud. |
+| `Read job` returns 404 | The app is reachable but the job id is unknown to it — usually the app and n8n pointing at different buckets or environments. |
+| Every photo is a placeholder, warning says `ERR_INVALID_HTTP_TOKEN` | The Pexels credential's **Name** field is not a valid header name. It must be exactly `Authorization`, with the key in Value. |
+| Every photo is a placeholder, warning says 401 | The Pexels key itself is wrong. |
+| `Bad request - please check your parameters` on a Claude node | The Messages API rejected the request. The real reason is in the execution under the node's error `description`. |
+| Job ends `done` with a Canva warning | The import failed or timed out. The PowerPoint is still in the job record. |
 
-- Claude Opus 5 con `effort: medium`: aproximadamente 0,25–0,55 USD por presentación
-  (entrada 6–17k tokens, salida 8–18k). El reintento cuesta menos porque prompt y brief
-  vienen de la caché (5 minutos). `usage` se guarda en `job.meta`.
-- Pexels gratuito: 200 peticiones/hora; un job hace 10–30. Pedir el aumento de cuota
-  (gratuito, con atribución) antes del piloto.
-- n8n Cloud: una ejecución por job; el workflow tarda de 2 a 6 minutos.
+Anthropic errors are worth opening in the execution view: n8n's message is generic, but
+`error.description` carries the API's own sentence.
+
+## Costs and limits
+
+- Claude: about $0.25 per deck at `medium` effort.
+- Pexels free tier: 200 requests an hour; a job makes 10–30. Ask them to raise it.
+- n8n Cloud: one execution per job, 2–6 minutes each.

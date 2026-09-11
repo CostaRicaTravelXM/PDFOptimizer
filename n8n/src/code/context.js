@@ -1,5 +1,5 @@
-// Contexto — runs once. Everything later nodes need about this job, in one place, so
-// expressions read `$('Contexto').first().json.x` instead of digging into the webhook body.
+// Context — runs once. Everything later nodes need about this job, in one place, so
+// expressions read `$('Context').first().json.x` instead of digging into the webhook body.
 const body = $('Webhook').first().json.body || {};
 const cfg = $('Config').first().json;
 const s = (v) => (typeof v === 'string' ? v.trim() : '');

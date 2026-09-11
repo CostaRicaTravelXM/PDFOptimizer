@@ -1,11 +1,11 @@
-// Construir petición Claude — runs once. Assembles the Messages API body.
+// Build Claude request — runs once. Assembles the Messages API body.
 //
 // The system prompt is byte-identical on every run and carries a cache breakpoint; the
 // brief is the second breakpoint so the retry call reads both from cache. Job parameters
 // and the asset index come last, because they change per job.
-const ctx = $('Contexto').first().json;
+const ctx = $('Context').first().json;
 const body = $('Webhook').first().json.body || {};
-const index = ($('Índice de activos').first().json || {}).assets || [];
+const index = ($('Asset index').first().json || {}).assets || [];
 
 const SYSTEM = __SYSTEM_PROMPT__;
 const SCHEMA = __MANIFEST_SCHEMA__;

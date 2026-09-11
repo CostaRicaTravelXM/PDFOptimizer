@@ -1,4 +1,4 @@
-// Validar manifest — runs once. Parses Claude's answer and checks the business rules the
+// Validate manifest — runs once. Parses Claude's answer and checks the business rules the
 // schema cannot express. Attempt 1 is strict and reports errors for a retry; attempt 2
 // repairs what it safely can (shortens copy, drops extras) and only fails on what it cannot.
 const ATTEMPT = __ATTEMPT__;
@@ -12,8 +12,8 @@ const PALETTE = __BRAND_PALETTE_HEX__.map((c) => c.toUpperCase());
 const FONTS = __FONT_WHITELIST__;
 
 const res = $input.first().json;
-const ctx = $('Contexto').first().json;
-const index = ($('Índice de activos').first().json || {}).assets || [];
+const ctx = $('Context').first().json;
+const index = ($('Asset index').first().json || {}).assets || [];
 const known = new Set(index.map((a) => String(a.filename || a.id || '').toLowerCase()));
 
 const out = {

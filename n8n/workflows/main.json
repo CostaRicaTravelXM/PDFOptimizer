@@ -1,0 +1,1521 @@
+{
+  "name": "TravelXM — Itinerary Presentation · Main",
+  "nodes": [
+    {
+      "id": "a9c7a12d-5587-423b-a1fb-c28261771cdf",
+      "name": "Instructions",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -640,
+        -80
+      ],
+      "parameters": {
+        "width": 640,
+        "height": 560,
+        "content": "## TravelXM — Itinerary Presentation\n\nTurns an itinerary brief into an editable Canva deck. The Tools Suite app uploads the\nPDF and calls this webhook; this workflow plans the slides with Claude, resolves the\nphotographs, asks the app to compile a PPTX and imports it into Canva. **The app owns\nthe job record** — every step here reports progress with `PATCH /api/presentations/jobs/:id`.\n\n### Generated file — do not edit here\nBuilt by `npm run n8n:build` in the PDFOptimizer repo. Edit `n8n/src/code/*.js` or\n`n8n/src/system-prompt.md` and redeploy with `npm run n8n:deploy`; anything typed into\nthese nodes is overwritten. Credentials you pick by hand *are* preserved.\n\n### Before activating\n1. **Config** node: set `TOOLS_APP_URL` to the app, and `CANVA_ENABLED` to `false` if\n   Canva is not connected yet.\n2. Credentials: *x-tools-secret* on the Webhook; the *bearer* on every `Status: …` node\n   and on `Compile`; *Anthropic*; *Pexels*; *Canva account*.\n3. Settings → Error Workflow → *TravelXM — Itinerary Presentation · Error handler*, and\n   a workflow timeout above 15 minutes (Claude alone can take 4).\n4. Activate, then copy the Webhook Production URL into the app as\n   `N8N_PRESENTATION_WEBHOOK_URL`.\n\n### Testing\n`dryRun: true` in the webhook body skips Canva; `force: true` re-runs a job that already\nfinished. Both are for curl tests — the app never sends them."
+      }
+    },
+    {
+      "id": "df9d0edd-4772-4dc2-a790-b4025932fbaa",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "itinerary-presentation",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "webhookId": "5f679826-df9d-4eec-a8af-eb6fdf65fc22",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Tools Suite → n8n (x-tools-secret)"
+        }
+      }
+    },
+    {
+      "id": "1ced37f0-d7f2-41c4-a42b-8a188adb1200",
+      "name": "Validate payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        260,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// Validate payload — runs once. The webhook already checked the shared secret; this checks\n// the shape so a bad request is answered with 400 before any work starts.\nconst body = $input.first().json.body || {};\nconst errors = [];\nconst STYLES = ['minimal', 'immersive'];\nconst AUDIENCES = ['agent', 'internal', 'client', 'mixed'];\nconst LANGUAGES = ['en', 'es'];\nconst s = (v) => (typeof v === 'string' ? v.trim() : '');\n\nif (!/^\\d{8}-\\d{6}-[0-9a-f]{6}$/.test(s(body.jobId))) errors.push('jobId is missing or malformed');\nif (!s(body.title)) errors.push('title is required');\nif (!STYLES.includes(body.style)) errors.push('style must be minimal or immersive');\nif (!AUDIENCES.includes(body.audience)) errors.push('audience is not one of agent, internal, client, mixed');\nif (!LANGUAGES.includes(body.language)) errors.push('language must be en or es');\nif (!s(body.destination)) errors.push('destination is required');\nif (s(body.text).length < 200) {\n  errors.push('text is too short to plan from (the PDF may be a scan)');\n}\n\nreturn [{ json: { ok: errors.length === 0, errors, jobId: s(body.jobId) } }];\n",
+        "mode": "runOnceForAllItems"
+      }
+    },
+    {
+      "id": "3e79ee17-cdcc-48e2-a0ea-88d0a78801da",
+      "name": "Payload valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        520,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "a9e540f0-6f29-480c-a044-fd6c3deae97c",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "cd85df0d-dc0d-4f8e-adcb-02d2d0e25058",
+      "name": "Respond 400",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        780,
+        200
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ accepted: false, errors: $json.errors }) }}",
+        "options": {
+          "responseCode": 400
+        }
+      }
+    },
+    {
+      "id": "f6075fa8-6add-4e24-a817-2f944ac51c66",
+      "name": "Respond 202",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        780,
+        0
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ accepted: true, jobId: $json.jobId }) }}",
+        "options": {
+          "responseCode": 202
+        }
+      }
+    },
+    {
+      "id": "6164a04b-0b5b-449b-a17c-2380148dbd0b",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1040,
+        0
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c5d9e87a-33d9-4e90-aac1-a61df2daad2c",
+              "name": "TOOLS_APP_URL",
+              "value": "https://REEMPLAZAR.vercel.app",
+              "type": "string"
+            },
+            {
+              "id": "3730d5b9-6124-4549-a65d-d36b9c9a9ac7",
+              "name": "CLAUDE_MODEL",
+              "value": "claude-opus-5",
+              "type": "string"
+            },
+            {
+              "id": "ac899a2e-9f2b-4e39-a811-db8ffaea5d5c",
+              "name": "CLAUDE_EFFORT",
+              "value": "medium",
+              "type": "string"
+            },
+            {
+              "id": "b096cd95-ce3c-4308-a615-0df1cf0d6569",
+              "name": "CANVA_ENABLED",
+              "value": "true",
+              "type": "string"
+            },
+            {
+              "id": "7c363a2a-72ca-497d-ad7e-898bcb2548f4",
+              "name": "ANTHROPIC_URL",
+              "value": "https://api.anthropic.com/v1/messages",
+              "type": "string"
+            },
+            {
+              "id": "2ac0a942-273b-4237-aee0-087f095bd5c7",
+              "name": "PEXELS_URL",
+              "value": "https://api.pexels.com/v1/search",
+              "type": "string"
+            },
+            {
+              "id": "4169a293-c3c5-49fb-a49c-f7db38550b52",
+              "name": "CANVA_URL",
+              "value": "https://api.canva.com/rest/v1",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": false,
+        "options": {}
+      }
+    },
+    {
+      "id": "08bf5f05-b56e-4643-a613-1eba89343499",
+      "name": "Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1300,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// Context — runs once. Everything later nodes need about this job, in one place, so\n// expressions read `$('Context').first().json.x` instead of digging into the webhook body.\nconst body = $('Webhook').first().json.body || {};\nconst cfg = $('Config').first().json;\nconst s = (v) => (typeof v === 'string' ? v.trim() : '');\nconst canvaEnabled = String(cfg.CANVA_ENABLED).toLowerCase() === 'true';\n\nreturn [\n  {\n    json: {\n      jobId: s(body.jobId),\n      title: s(body.title),\n      style: body.style,\n      audience: body.audience,\n      language: body.language,\n      destination: s(body.destination),\n      clientName: s(body.clientName),\n      travelDates: s(body.travelDates),\n      travelers: s(body.travelers),\n      notes: s(body.notes),\n      textLow: body.textLow === true,\n      pageCount: Number(body.pageCount) || 0,\n      textChars: Number(body.textChars) || 0,\n      textLength: s(body.text).length,\n      // dryRun skips Canva; the app never sends it, curl tests and the kill switch do.\n      dryRun: body.dryRun === true || !canvaEnabled,\n      force: body.force === true,\n      appUrl: String(cfg.TOOLS_APP_URL || '').replace(/\\/+$/, ''),\n      anthropicUrl: String(cfg.ANTHROPIC_URL || 'https://api.anthropic.com/v1/messages'),\n      pexelsUrl: String(cfg.PEXELS_URL || 'https://api.pexels.com/v1/search'),\n      canvaUrl: String(cfg.CANVA_URL || 'https://api.canva.com/rest/v1'),\n      model: String(cfg.CLAUDE_MODEL || 'claude-opus-5'),\n      effort: String(cfg.CLAUDE_EFFORT || 'medium'),\n    },\n  },\n];\n",
+        "mode": "runOnceForAllItems"
+      }
+    },
+    {
+      "id": "e7364729-626c-4481-a193-43ca1f0d0252",
+      "name": "Read job",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1560,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Context').first().json.appUrl }}/api/presentations/jobs/{{ $('Context').first().json.jobId }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "67c5b359-24f1-472c-aefd-51f20dd6b96f",
+      "name": "Can it run?",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1820,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// Can it run? — runs once. A job that is already running or finished is not run\n// again unless the caller says `force`; re-posting a webhook must be harmless.\nconst job = $input.first().json;\nconst ctx = $('Context').first().json;\nconst run = ['queued', 'failed'].includes(job.status) || ctx.force === true;\nreturn [{ json: { run, status: job.status } }];\n",
+        "mode": "runOnceForAllItems"
+      }
+    },
+    {
+      "id": "639c757b-8c5e-4d97-acbf-d0b430022e39",
+      "name": "Run?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2080,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "a9b823d8-d1c4-40a4-a1a3-6c9cf7fc9a80",
+              "leftValue": "={{ $json.run }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "a10dcc8d-8158-47e1-afc7-de521b606211",
+      "name": "Status: planning",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2340,
+        0
+      ],
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $('Context').first().json.appUrl }}/api/presentations/jobs/{{ $('Context').first().json.jobId }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'planning', step: 'Reading the brief and planning the slides…' }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "n8n → Tools Suite (bearer)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "id": "d39866eb-1379-48a8-aac7-a0f5f6fc7597",
+      "name": "Asset index",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2600,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// Asset index — runs once. Today a stub: no approved library exists yet, so the\n// planner is told there are no assets and the resolver never finds a match.\n//\n// When the Zoho WorkDrive indexer lands, this node reads\n// `presentations/index/workdrive-assets.json` from the bucket (or calls the app for it) and\n// returns the same shape, filtered to the job's destination and capped at 300 entries:\n//   { assets: [{ id, filename, destination, entity_type, entities, tags, orientation, url }] }\n// Nothing downstream changes.\nconst ctx = $('Context').first().json;\nreturn [{ json: { assets: [], source: 'stub', destination: ctx.destination, generatedAt: new Date().toISOString() } }];\n",
+        "mode": "runOnceForAllItems"
+      }
+    },
+    {
+      "id": "98e26b79-8b25-4642-a738-9bc147d55c30",
+      "name": "Build Claude request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2860,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// Build Claude request — runs once. Assembles the Messages API body.\n//\n// The system prompt is byte-identical on every run and carries a cache breakpoint; the\n// brief is the second breakpoint so the retry call reads both from cache. Job parameters\n// and the asset index come last, because they change per job.\nconst ctx = $('Context').first().json;\nconst body = $('Webhook').first().json.body || {};\nconst index = ($('Asset index').first().json || {}).assets || [];\n\nconst SYSTEM = \"You are the presentation strategist and design planner for TravelXM, a Costa Rica destination management company. You turn an itinerary brief into a plan for a slide deck. You do not render slides; a deterministic compiler does. You return only a JSON manifest that follows the schema you are given.\\n\\n## Non-negotiable rules\\n\\n1. Use only information supplied by the brief and the job parameters. Never invent hotel features, transfer times, included services, prices, airlines, room categories, or legal claims.\\n2. If the brief does not name a hotel for a night, write \\\"Hotel por confirmar\\\" (Spanish) or \\\"Hotel to be confirmed\\\" (English) and add a warning on that slide.\\n3. Mention prices only if the brief states them, and copy them exactly.\\n4. Prefer approved library assets (source \\\"workdrive\\\") when the asset index offers an exact subject match.\\n5. Never plan a stock photo (source \\\"pexels\\\") for a named hotel, lodge, villa, vehicle, airline, or partner. Those are subject_kind \\\"named_property\\\" and get source \\\"workdrive\\\" (exact match in the index) or \\\"placeholder\\\".\\n6. Keep the selected style consistent across the whole deck.\\n7. Vary composition: never use the same layout more than two slides in a row.\\n8. Keep every copy field inside its character limit (table below). Count characters, not words.\\n9. Mark missing or uncertain data with a slide-level warning rather than guessing.\\n10. Use readable contrast: dark text on light surfaces, white text only over photographs.\\n11. Copy must be tight. Prefer fewer, stronger slides over exhaustive ones.\\n\\n## Styles\\n\\nApply only the addendum that matches the `style` given in the job parameters.\\n\\n### minimal\\n\\nDesign for travel professionals. Prioritize factual clarity, visual order, logistics, and scanability. Use compact cards, tables, route diagrams, and restrained photography. Avoid ornamental wildlife illustrations. Use white space and neutral surfaces. Do not plan full-bleed imagery except on the cover. Information density is welcome: dates, transfers, inclusions, hotels, rooming, contacts.\\n\\n### immersive\\n\\nDesign for a consumer client. Prioritize emotional storytelling, destination atmosphere, premium travel positioning, and visual rhythm. Use large photographs, editorial asymmetry, concise sensory language, and at most one contextual wildlife illustration per slide (source \\\"workdrive\\\" only, from the index; otherwise omit). Keep practical details visible but secondary to the experience narrative. Sequence the story: arrival, discovery, stay, experiences, farewell.\\n\\n## Slide grammar\\n\\nSlide types and the layouts that fit them:\\n\\n- cover: full_bleed_hero_with_left_copy\\n- overview: split_photo_text, full_bleed_hero_with_left_copy\\n- route: timeline_route\\n- itinerary_day: split_photo_text, asymmetric_two_photo_editorial\\n- accommodation: hotel_comparison, asymmetric_two_photo_editorial\\n- inclusions: information_cards\\n- closing: closing_story\\n\\nStructural rules:\\n\\n- The first slide is type \\\"cover\\\"; the last slide is type \\\"closing\\\". Both are required.\\n- Immersive covers use \\\"full_bleed_hero_with_left_copy\\\".\\n- One \\\"itinerary_day\\\" slide per day for trips of up to 10 days; group days when longer.\\n- Include a \\\"route\\\" slide when the trip visits more than one place; give it 3 to 7 stops.\\n- Include an \\\"accommodation\\\" slide when hotels are named (1 to 3 options); an \\\"inclusions\\\" slide when the brief lists inclusions or exclusions.\\n- Slide count: minimal 8–20, immersive 10–22. Never more than 25.\\n- Slide ids are short, unique, snake_case (cover, overview, route, day_01, hotels, inclusions, closing).\\n- \\\"theme\\\" is required on every slide: use \\\"light\\\" unless the slide's text sits on a photograph, which is \\\"dark\\\"; \\\"accent\\\" marks a section change.\\n\\n## Copy limits (characters)\\n\\n- eyebrow: 24\\n- title: 42 on the cover, 60 elsewhere\\n- subtitle: 90\\n- body: 280 (immersive) / 420 (minimal)\\n- day_label: 12\\n- meta: up to 5 items of 40\\n- stops: up to 7; label ≤ 24, sublabel ≤ 30, date ≤ 16\\n- cards: up to 6; title 32, body 120\\n- options: up to 3; name ≤ 40, location ≤ 30, room ≤ 40, notes ≤ 140, price ≤ 30\\n- included / excluded: up to 8 items of 60\\n- cta: 60\\n\\nEvery slide gets a \\\"title\\\". \\\"eyebrow\\\" is a short kicker such as the destination or section name. \\\"day_label\\\" is used only on itinerary_day slides (\\\"Day 1\\\", \\\"Día 1\\\"). \\\"meta\\\" holds short factual lines (transfer, flight, overnight). \\\"stops\\\" belong to route slides; \\\"options\\\" to accommodation slides; \\\"cards\\\" or \\\"included\\\"/\\\"excluded\\\" to inclusions slides; \\\"contact\\\" and \\\"cta\\\" to the closing slide.\\n\\nEvery field in the schema is required, so nothing may be omitted: a text field you are not using is the empty string \\\"\\\", and a list you are not using is the empty array []. Never write the word \\\"null\\\".\\n\\n## Assets\\n\\nEach slide may declare up to three photo assets (purposes \\\"background\\\", \\\"primary_photo\\\", \\\"secondary_photo\\\", \\\"tertiary_photo\\\") and at most one \\\"decorative_element\\\". Match purposes to the layout:\\n\\n- full_bleed_hero_with_left_copy, closing_story, timeline_route (immersive): \\\"background\\\"\\n- split_photo_text: \\\"primary_photo\\\"\\n- asymmetric_two_photo_editorial: \\\"primary_photo\\\" and \\\"secondary_photo\\\"\\n- hotel_comparison: one of \\\"primary_photo\\\", \\\"secondary_photo\\\", \\\"tertiary_photo\\\" per option, in order\\n- information_cards: none\\n\\nFor every asset set \\\"subject_kind\\\":\\n\\n- \\\"generic_scene\\\": a landscape, beach, rainforest, wildlife, food, culture, or transport atmosphere shot. Source \\\"workdrive\\\" with \\\"asset_match\\\" when the index has one; otherwise source \\\"pexels\\\" with a \\\"fallback_query\\\". Always provide a fallback_query for generic scenes, even when proposing a workdrive match.\\n- \\\"named_property\\\": a specific hotel, lodge, room, vehicle, airline, or partner. Source \\\"workdrive\\\" only with an exact index match; otherwise \\\"placeholder\\\". Never \\\"pexels\\\".\\n- \\\"brand_element\\\": logos and wildlife illustrations. Source \\\"workdrive\\\" only; otherwise \\\"placeholder\\\" (or omit the decorative element).\\n\\n\\\"fallback_query\\\" is written in English, 4 to 8 words, specific to Costa Rica where possible (\\\"Puerto Viejo Caribbean beach palm trees\\\", \\\"Monteverde cloud forest hanging bridge\\\"), never a brand or hotel name. \\\"orientation\\\" is required on every asset: \\\"landscape\\\" everywhere except the secondary photo of an asymmetric_two_photo_editorial slide, which is \\\"portrait\\\".\\n\\n## Language\\n\\nWrite all copy in the job's `language`: \\\"es\\\" is neutral Latin American Spanish with Costa Rican place names as locals write them; \\\"en\\\" is US English. Queries are always English. Do not translate proper names.\\n\\n## Brand\\n\\nPalette (the compiler ignores anything else): #14313F, #456572, #72C049, #8FD06A, #396B1F, #3A9E46, #D6BF8A, #FF7F30, #0C86A0, #5BC0DE, #F2B705, #274690, #F2F9FC, #D9ECF5, #F7F4EC, #FFFFFF\\nFonts (choose from these only): Cormorant Garamond, DM Sans, Playfair Display, Inter\\nSet brand.palette to the three to five colours that suit this deck, brand.title_font and brand.body_font to one font each.\\n\\n## Output\\n\\nReturn the manifest JSON only. No prose, no markdown fences.\";\nconst SCHEMA = {\"type\":\"object\",\"additionalProperties\":false,\"required\":[\"presentation\",\"brand\",\"slides\"],\"properties\":{\"presentation\":{\"type\":\"object\",\"additionalProperties\":false,\"required\":[\"title\",\"subtitle\",\"style\",\"audience\",\"language\"],\"properties\":{\"title\":{\"type\":\"string\"},\"subtitle\":{\"type\":\"string\"},\"style\":{\"type\":\"string\",\"enum\":[\"minimal\",\"immersive\"]},\"audience\":{\"type\":\"string\",\"enum\":[\"agent\",\"internal\",\"client\",\"mixed\"]},\"language\":{\"type\":\"string\",\"enum\":[\"en\",\"es\"]}}},\"brand\":{\"type\":\"object\",\"additionalProperties\":false,\"required\":[\"palette\",\"title_font\",\"body_font\"],\"properties\":{\"palette\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}},\"title_font\":{\"type\":\"string\"},\"body_font\":{\"type\":\"string\"}}},\"slides\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"additionalProperties\":false,\"required\":[\"id\",\"type\",\"layout\",\"theme\",\"copy\",\"assets\",\"warnings\"],\"properties\":{\"id\":{\"type\":\"string\"},\"type\":{\"type\":\"string\",\"enum\":[\"cover\",\"overview\",\"route\",\"itinerary_day\",\"accommodation\",\"inclusions\",\"closing\"]},\"layout\":{\"type\":\"string\",\"enum\":[\"full_bleed_hero_with_left_copy\",\"split_photo_text\",\"asymmetric_two_photo_editorial\",\"timeline_route\",\"information_cards\",\"hotel_comparison\",\"closing_story\"]},\"theme\":{\"type\":\"string\",\"enum\":[\"light\",\"dark\",\"accent\"]},\"copy\":{\"type\":\"object\",\"additionalProperties\":false,\"required\":[\"eyebrow\",\"title\",\"subtitle\",\"body\",\"day_label\",\"meta\",\"stops\",\"cards\",\"options\",\"included\",\"excluded\",\"contact\",\"cta\"],\"properties\":{\"eyebrow\":{\"type\":\"string\"},\"title\":{\"type\":\"string\"},\"subtitle\":{\"type\":\"string\"},\"body\":{\"type\":\"string\"},\"day_label\":{\"type\":\"string\"},\"meta\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}},\"stops\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"additionalProperties\":false,\"required\":[\"label\",\"sublabel\",\"date\"],\"properties\":{\"label\":{\"type\":\"string\"},\"sublabel\":{\"type\":\"string\"},\"date\":{\"type\":\"string\"}}}},\"cards\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"additionalProperties\":false,\"required\":[\"title\",\"body\"],\"properties\":{\"title\":{\"type\":\"string\"},\"body\":{\"type\":\"string\"}}}},\"options\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"additionalProperties\":false,\"required\":[\"name\",\"location\",\"room\",\"notes\",\"price\"],\"properties\":{\"name\":{\"type\":\"string\"},\"location\":{\"type\":\"string\"},\"room\":{\"type\":\"string\"},\"notes\":{\"type\":\"string\"},\"price\":{\"type\":\"string\"}}}},\"included\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}},\"excluded\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}},\"contact\":{\"type\":\"object\",\"additionalProperties\":false,\"required\":[\"name\",\"email\",\"phone\",\"website\"],\"properties\":{\"name\":{\"type\":\"string\"},\"email\":{\"type\":\"string\"},\"phone\":{\"type\":\"string\"},\"website\":{\"type\":\"string\"}}},\"cta\":{\"type\":\"string\"}}},\"assets\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"additionalProperties\":false,\"required\":[\"purpose\",\"source\",\"subject_kind\",\"asset_match\",\"fallback_query\",\"orientation\"],\"properties\":{\"purpose\":{\"type\":\"string\",\"enum\":[\"background\",\"primary_photo\",\"secondary_photo\",\"tertiary_photo\",\"decorative_element\"]},\"source\":{\"type\":\"string\",\"enum\":[\"workdrive\",\"pexels\",\"placeholder\"]},\"subject_kind\":{\"type\":\"string\",\"enum\":[\"generic_scene\",\"named_property\",\"brand_element\"]},\"asset_match\":{\"type\":\"string\"},\"fallback_query\":{\"type\":\"string\"},\"orientation\":{\"type\":\"string\",\"enum\":[\"landscape\",\"portrait\"]}}}},\"warnings\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}}}}}}};\n\nconst indexLines = index\n  .slice(0, 300)\n  .map((a) =>\n    [a.id, a.filename, a.destination, a.entity_type, (a.entities || []).join(', '), (a.tags || []).join(', '), a.orientation]\n      .map((v) => (v == null ? '' : String(v)))\n      .join(' | '),\n  );\n\nconst params = [\n  'Job parameters:',\n  `- title: ${ctx.title}`,\n  `- style: ${ctx.style}`,\n  `- audience: ${ctx.audience}`,\n  `- language: ${ctx.language}`,\n  `- destination: ${ctx.destination}`,\n  ctx.clientName ? `- client name: ${ctx.clientName}` : null,\n  ctx.travelDates ? `- travel dates: ${ctx.travelDates}` : null,\n  ctx.travelers ? `- travelers: ${ctx.travelers}` : null,\n  ctx.notes ? `- special instructions from the user: ${ctx.notes}` : null,\n  ctx.textLow\n    ? '- extraction quality: LOW. The PDF yielded little text; be conservative, keep to what is legible, and add warnings where the brief is unclear.'\n    : null,\n  '',\n  `Available approved assets (${index.length}), as \"id | filename | destination | entity_type | entities | tags | orientation\":`,\n  indexLines.length\n    ? indexLines.join('\\n')\n    : 'None. Use source \"placeholder\" for named properties and brand elements, and \"pexels\" with a fallback_query for generic scenes.',\n].filter((l) => l !== null);\n\nconst request = {\n  model: ctx.model,\n  max_tokens: 32000,\n  system: [{ type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral' } }],\n  messages: [\n    {\n      role: 'user',\n      content: [\n        { type: 'text', text: `<brief>\\n${String(body.text || '')}\\n</brief>`, cache_control: { type: 'ephemeral' } },\n        { type: 'text', text: params.join('\\n') },\n      ],\n    },\n  ],\n  output_config: {\n    effort: ctx.effort,\n    format: { type: 'json_schema', schema: SCHEMA },\n  },\n};\n\nreturn [{ json: { request } }];\n",
+        "mode": "runOnceForAllItems"
+      }
+    },
+    {
+      "id": "e42dbaf7-1aa2-4377-ac8e-18beda53b84e",
+      "name": "Claude — plan",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3120,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Context').first().json.anthropicUrl }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "anthropicApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.request) }}",
+        "options": {
+          "timeout": 600000
+        }
+      },
+      "credentials": {
+        "anthropicApi": {
+          "id": "",
+          "name": "Anthropic account TravelXM"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 5000,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "2155976e-967d-4e21-ae73-29bf7995e736",
+      "name": "Validate manifest",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3380,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// Validate manifest — runs once. Parses Claude's answer and checks the business rules the\n// schema cannot express. Attempt 1 is strict and reports errors for a retry; attempt 2\n// repairs what it safely can (shortens copy, drops extras) and only fails on what it cannot.\nconst ATTEMPT = 1;\nconst SOFT = ATTEMPT >= 2;\nconst LIMITS = {\"eyebrow\":24,\"cover_title\":42,\"title\":60,\"subtitle\":90,\"day_label\":12,\"body_immersive\":280,\"body_minimal\":420,\"meta_items\":5,\"meta_item\":40,\"cards\":6,\"card_title\":32,\"card_body\":120,\"options\":3,\"stops\":7,\"list_items\":8,\"list_item\":60,\"cta\":60};\nconst SLIDE_LIMITS = {\"minimal\":{\"min\":8,\"max\":20},\"immersive\":{\"min\":10,\"max\":22},\"hard_max\":25};\nconst LAYOUTS = [\"full_bleed_hero_with_left_copy\",\"split_photo_text\",\"asymmetric_two_photo_editorial\",\"timeline_route\",\"information_cards\",\"hotel_comparison\",\"closing_story\"];\nconst TYPES = [\"cover\",\"overview\",\"route\",\"itinerary_day\",\"accommodation\",\"inclusions\",\"closing\"];\nconst DEFAULT_LAYOUT = {\"cover\":\"full_bleed_hero_with_left_copy\",\"overview\":\"split_photo_text\",\"route\":\"timeline_route\",\"itinerary_day\":\"split_photo_text\",\"accommodation\":\"hotel_comparison\",\"inclusions\":\"information_cards\",\"closing\":\"closing_story\"};\nconst PALETTE = [\"#14313F\",\"#456572\",\"#72C049\",\"#8FD06A\",\"#396B1F\",\"#3A9E46\",\"#D6BF8A\",\"#FF7F30\",\"#0C86A0\",\"#5BC0DE\",\"#F2B705\",\"#274690\",\"#F2F9FC\",\"#D9ECF5\",\"#F7F4EC\",\"#FFFFFF\"].map((c) => c.toUpperCase());\nconst FONTS = [\"Cormorant Garamond\",\"DM Sans\",\"Playfair Display\",\"Inter\"];\n\nconst res = $input.first().json;\nconst ctx = $('Context').first().json;\nconst index = ($('Asset index').first().json || {}).assets || [];\nconst known = new Set(index.map((a) => String(a.filename || a.id || '').toLowerCase()));\n\nconst out = {\n  valid: false,\n  attempt: ATTEMPT,\n  errors: [],\n  warnings: [],\n  manifest: null,\n  raw: null,\n  usage: res.usage || null,\n  stop_reason: res.stop_reason || null,\n  model: res.model || null,\n};\nconst fail = (msg) => {\n  out.errors.push(msg);\n  return [{ json: out }];\n};\n\nif (res.error) return fail(`API error: ${res.error.message || JSON.stringify(res.error)}`);\nif (res.stop_reason === 'max_tokens') return fail('The answer was cut off (max_tokens); the manifest is incomplete.');\nif (res.stop_reason === 'refusal') return fail('The model declined to produce a plan for this brief.');\n\nconst text = (res.content || []).filter((c) => c.type === 'text').map((c) => c.text).join('');\nout.raw = text;\nlet m;\ntry {\n  m = JSON.parse(text);\n} catch (e) {\n  return fail(`The answer is not valid JSON: ${e.message}`);\n}\n\n// --- helpers -------------------------------------------------------------------------\nconst errors = out.errors;\nconst warnings = out.warnings;\nconst cut = (s, max) => {\n  const t = String(s).slice(0, max);\n  const sp = t.lastIndexOf(' ');\n  return (sp > max * 0.6 ? t.slice(0, sp) : t).replace(/[\\s,;:–-]+$/, '') + '…';\n};\n// The schema cannot express \"optional\" (see manifestSchema.ts), so the planner sends \"\" for\n// an unused string and [] for an unused list. Drop both, and any object left empty by that,\n// so the compiler receives plain optionals and never renders a blank field.\nconst clean = (v) => {\n  if (Array.isArray(v)) {\n    const a = v.map(clean).filter((x) => x !== undefined);\n    return a.length ? a : undefined;\n  }\n  if (v && typeof v === 'object') {\n    const o = {};\n    for (const [k, x] of Object.entries(v)) {\n      const c = clean(x);\n      if (c !== undefined) o[k] = c;\n    }\n    return Object.keys(o).length ? o : undefined;\n  }\n  if (v === null || v === '') return undefined;\n  return v;\n};\nm = clean(m) || {};\n\n// --- presentation ------------------------------------------------------------------\nconst p = m.presentation || {};\nif (!p.title) errors.push('presentation.title is empty');\nif (p.style !== ctx.style) {\n  if (SOFT) { p.style = ctx.style; warnings.push('presentation.style corrected to the requested style'); }\n  else errors.push(`presentation.style must be \"${ctx.style}\"`);\n}\nif (p.language !== ctx.language) {\n  if (SOFT) { p.language = ctx.language; warnings.push('presentation.language corrected'); }\n  else errors.push(`presentation.language must be \"${ctx.language}\"`);\n}\np.audience = p.audience || ctx.audience;\nm.presentation = p;\n\n// --- brand -----------------------------------------------------------------------------\nconst brand = m.brand || {};\nif (Array.isArray(brand.palette)) {\n  const kept = brand.palette.map((c) => String(c).toUpperCase()).filter((c) => PALETTE.includes(c));\n  if (kept.length !== brand.palette.length) warnings.push('palette colours outside the brand set were dropped');\n  brand.palette = kept;\n}\nfor (const k of ['title_font', 'body_font']) {\n  if (brand[k] && !FONTS.includes(brand[k])) {\n    warnings.push(`${k} \"${brand[k]}\" is not approved; the brand default is used`);\n    delete brand[k];\n  }\n}\nm.brand = brand;\n\n// --- slides ----------------------------------------------------------------------------\nlet slides = Array.isArray(m.slides) ? m.slides : [];\nif (slides.length === 0) return fail('slides is empty');\n\nconst range = SLIDE_LIMITS[ctx.style];\nif (slides.length > SLIDE_LIMITS.hard_max) {\n  if (SOFT) { slides = slides.slice(0, SLIDE_LIMITS.hard_max); warnings.push(`only the first ${SLIDE_LIMITS.hard_max} slides were kept`); }\n  else errors.push(`too many slides (${slides.length}); the maximum is ${SLIDE_LIMITS.hard_max}`);\n} else if (slides.length < range.min || slides.length > range.max) {\n  warnings.push(`${slides.length} slides is outside the usual ${range.min}–${range.max} for ${ctx.style}`);\n}\n\nconst ids = new Set();\nconst bodyMax = ctx.style === 'immersive' ? LIMITS.body_immersive : LIMITS.body_minimal;\n\nconst checkStr = (slide, field, value, max) => {\n  if (typeof value !== 'string' || value.length <= max) return value;\n  if (SOFT) { warnings.push(`${slide.id}: ${field} shortened to ${max} characters`); return cut(value, max); }\n  errors.push(`${slide.id}: ${field} is ${value.length} characters; the limit is ${max}`);\n  return value;\n};\nconst checkList = (slide, field, list, maxItems, maxEach) => {\n  if (!Array.isArray(list)) return list;\n  let l = list;\n  if (l.length > maxItems) {\n    if (SOFT) { warnings.push(`${slide.id}: ${field} trimmed to ${maxItems} items`); l = l.slice(0, maxItems); }\n    else errors.push(`${slide.id}: ${field} has ${l.length} items; the limit is ${maxItems}`);\n  }\n  return maxEach ? l.map((x) => (typeof x === 'string' ? checkStr(slide, `${field} item`, x, maxEach) : x)) : l;\n};\n\nslides.forEach((slide, i) => {\n  slide.id = String(slide.id || `slide_${i + 1}`).replace(/[^A-Za-z0-9_-]+/g, '_');\n  if (ids.has(slide.id)) {\n    const base = slide.id; let n = 2;\n    while (ids.has(`${base}_${n}`)) n++;\n    slide.id = `${base}_${n}`;\n    warnings.push(`duplicate slide id \"${base}\" renamed`);\n  }\n  ids.add(slide.id);\n\n  if (!TYPES.includes(slide.type)) {\n    if (SOFT) { const t = i === 0 ? 'cover' : i === slides.length - 1 ? 'closing' : 'itinerary_day'; warnings.push(`${slide.id}: unknown type \"${slide.type}\" treated as ${t}`); slide.type = t; }\n    else errors.push(`${slide.id}: unknown slide type \"${slide.type}\"`);\n  }\n  if (!LAYOUTS.includes(slide.layout)) {\n    if (SOFT) { slide.layout = DEFAULT_LAYOUT[slide.type] || 'split_photo_text'; warnings.push(`${slide.id}: unknown layout replaced by ${slide.layout}`); }\n    else errors.push(`${slide.id}: unknown layout \"${slide.layout}\"`);\n  }\n\n  const c = slide.copy || {};\n  const isCover = slide.type === 'cover';\n  c.eyebrow = checkStr(slide, 'eyebrow', c.eyebrow, LIMITS.eyebrow);\n  c.title = checkStr(slide, 'title', c.title, isCover ? LIMITS.cover_title : LIMITS.title);\n  c.subtitle = checkStr(slide, 'subtitle', c.subtitle, LIMITS.subtitle);\n  c.body = checkStr(slide, 'body', c.body, bodyMax);\n  c.day_label = checkStr(slide, 'day_label', c.day_label, LIMITS.day_label);\n  c.cta = checkStr(slide, 'cta', c.cta, LIMITS.cta);\n  c.meta = checkList(slide, 'meta', c.meta, LIMITS.meta_items, LIMITS.meta_item);\n  c.included = checkList(slide, 'included', c.included, LIMITS.list_items, LIMITS.list_item);\n  c.excluded = checkList(slide, 'excluded', c.excluded, LIMITS.list_items, LIMITS.list_item);\n  c.stops = checkList(slide, 'stops', c.stops, LIMITS.stops, 0);\n  c.options = checkList(slide, 'options', c.options, LIMITS.options, 0);\n  c.cards = checkList(slide, 'cards', c.cards, LIMITS.cards, 0);\n  if (Array.isArray(c.cards)) {\n    c.cards = c.cards.map((card) => ({ ...card, title: checkStr(slide, 'card title', card.title, LIMITS.card_title), body: checkStr(slide, 'card body', card.body, LIMITS.card_body) }));\n  }\n  if (!c.title) errors.push(`${slide.id}: title is required`);\n  slide.copy = c;\n\n  // Assets: counts and the source policy.\n  let photos = 0, decoratives = 0;\n  const assets = [];\n  for (const a of slide.assets || []) {\n    if (a.purpose === 'decorative_element') {\n      if (decoratives++ >= 1) { warnings.push(`${slide.id}: extra decorative element dropped`); continue; }\n    } else if (photos++ >= 3) { warnings.push(`${slide.id}: more than three photos; extras dropped`); continue; }\n\n    const named = a.subject_kind === 'named_property' || a.subject_kind === 'brand_element';\n    if (a.source === 'workdrive') {\n      const match = String(a.asset_match || '').toLowerCase();\n      if (!match || !known.has(match)) {\n        a.source = named ? 'placeholder' : 'pexels';\n        warnings.push(`${slide.id}: \"${a.asset_match || '?'}\" is not in the asset index; using ${a.source}`);\n      }\n    }\n    if (named && a.source === 'pexels') {\n      if (SOFT) { a.source = 'placeholder'; warnings.push(`${slide.id}: a named property cannot use a stock photo; placeholder used`); }\n      else errors.push(`${slide.id}: ${a.purpose} is a named property and must not use pexels`);\n    }\n    if (a.source === 'pexels' && !a.fallback_query) {\n      if (SOFT) { a.source = 'placeholder'; warnings.push(`${slide.id}: pexels asset without a query; placeholder used`); }\n      else errors.push(`${slide.id}: ${a.purpose} uses pexels but has no fallback_query`);\n    }\n    assets.push(a);\n  }\n  slide.assets = assets;\n});\n\nif (slides[0].type !== 'cover') errors.push('the first slide must be the cover');\nif (slides[slides.length - 1].type !== 'closing') errors.push('the last slide must be the closing slide');\nif (ctx.style === 'immersive' && slides[0].layout !== 'full_bleed_hero_with_left_copy') {\n  if (SOFT) { slides[0].layout = 'full_bleed_hero_with_left_copy'; warnings.push('cover layout set to the full-bleed hero'); }\n  else errors.push('an immersive cover must use full_bleed_hero_with_left_copy');\n}\nfor (let i = 2; i < slides.length; i++) {\n  if (slides[i].layout === slides[i - 1].layout && slides[i].layout === slides[i - 2].layout) {\n    const msg = `slides ${slides[i - 2].id}, ${slides[i - 1].id}, ${slides[i].id} use the same layout three times in a row`;\n    if (SOFT) warnings.push(msg); else errors.push(msg);\n    break;\n  }\n}\n\nm.slides = slides;\nout.manifest = m;\nout.valid = errors.length === 0;\nreturn [{ json: out }];\n",
+        "mode": "runOnceForAllItems"
+      }
+    },
+    {
+      "id": "75910242-e421-4472-a57d-7f2e83c9853e",
+      "name": "Manifest valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3640,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "ea35255f-dfc5-400d-a880-f54bc078cfcf",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "6b29e466-9028-48fb-a70a-383d5cb68b13",
+      "name": "Build retry",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3900,
+        220
+      ],
+      "parameters": {
+        "jsCode": "// Build retry — runs once. One more chance for the planner: the same request plus\n// its own answer and the list of what was wrong. System prompt and brief are unchanged so\n// both come back from the prompt cache.\nconst prev = $('Build Claude request').first().json.request;\nconst v = $('Validate manifest').first().json;\n\nconst messages = [\n  ...prev.messages,\n  { role: 'assistant', content: v.raw || '{}' },\n  {\n    role: 'user',\n    content:\n      'Your manifest failed validation. Fix ONLY the issues below and return the complete manifest again, following the same schema:\\n- ' +\n      v.errors.join('\\n- '),\n  },\n];\n\nreturn [{ json: { request: { ...prev, messages } } }];\n",
+        "mode": "runOnceForAllItems"
+      }
+    },
+    {
+      "id": "f467917a-d8f0-43d6-a2ce-0fe5902bb0fc",
+      "name": "Claude — retry",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4160,
+        220
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Context').first().json.anthropicUrl }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "anthropicApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.request) }}",
+        "options": {
+          "timeout": 600000
+        }
+      },
+      "credentials": {
+        "anthropicApi": {
+          "id": "",
+          "name": "Anthropic account TravelXM"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 5000,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "49cb9c0a-91ad-4944-aa73-d791fa2d580d",
+      "name": "Validate manifest (2)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4420,
+        220
+      ],
+      "parameters": {
+        "jsCode": "// Validate manifest — runs once. Parses Claude's answer and checks the business rules the\n// schema cannot express. Attempt 1 is strict and reports errors for a retry; attempt 2\n// repairs what it safely can (shortens copy, drops extras) and only fails on what it cannot.\nconst ATTEMPT = 2;\nconst SOFT = ATTEMPT >= 2;\nconst LIMITS = {\"eyebrow\":24,\"cover_title\":42,\"title\":60,\"subtitle\":90,\"day_label\":12,\"body_immersive\":280,\"body_minimal\":420,\"meta_items\":5,\"meta_item\":40,\"cards\":6,\"card_title\":32,\"card_body\":120,\"options\":3,\"stops\":7,\"list_items\":8,\"list_item\":60,\"cta\":60};\nconst SLIDE_LIMITS = {\"minimal\":{\"min\":8,\"max\":20},\"immersive\":{\"min\":10,\"max\":22},\"hard_max\":25};\nconst LAYOUTS = [\"full_bleed_hero_with_left_copy\",\"split_photo_text\",\"asymmetric_two_photo_editorial\",\"timeline_route\",\"information_cards\",\"hotel_comparison\",\"closing_story\"];\nconst TYPES = [\"cover\",\"overview\",\"route\",\"itinerary_day\",\"accommodation\",\"inclusions\",\"closing\"];\nconst DEFAULT_LAYOUT = {\"cover\":\"full_bleed_hero_with_left_copy\",\"overview\":\"split_photo_text\",\"route\":\"timeline_route\",\"itinerary_day\":\"split_photo_text\",\"accommodation\":\"hotel_comparison\",\"inclusions\":\"information_cards\",\"closing\":\"closing_story\"};\nconst PALETTE = [\"#14313F\",\"#456572\",\"#72C049\",\"#8FD06A\",\"#396B1F\",\"#3A9E46\",\"#D6BF8A\",\"#FF7F30\",\"#0C86A0\",\"#5BC0DE\",\"#F2B705\",\"#274690\",\"#F2F9FC\",\"#D9ECF5\",\"#F7F4EC\",\"#FFFFFF\"].map((c) => c.toUpperCase());\nconst FONTS = [\"Cormorant Garamond\",\"DM Sans\",\"Playfair Display\",\"Inter\"];\n\nconst res = $input.first().json;\nconst ctx = $('Context').first().json;\nconst index = ($('Asset index').first().json || {}).assets || [];\nconst known = new Set(index.map((a) => String(a.filename || a.id || '').toLowerCase()));\n\nconst out = {\n  valid: false,\n  attempt: ATTEMPT,\n  errors: [],\n  warnings: [],\n  manifest: null,\n  raw: null,\n  usage: res.usage || null,\n  stop_reason: res.stop_reason || null,\n  model: res.model || null,\n};\nconst fail = (msg) => {\n  out.errors.push(msg);\n  return [{ json: out }];\n};\n\nif (res.error) return fail(`API error: ${res.error.message || JSON.stringify(res.error)}`);\nif (res.stop_reason === 'max_tokens') return fail('The answer was cut off (max_tokens); the manifest is incomplete.');\nif (res.stop_reason === 'refusal') return fail('The model declined to produce a plan for this brief.');\n\nconst text = (res.content || []).filter((c) => c.type === 'text').map((c) => c.text).join('');\nout.raw = text;\nlet m;\ntry {\n  m = JSON.parse(text);\n} catch (e) {\n  return fail(`The answer is not valid JSON: ${e.message}`);\n}\n\n// --- helpers -------------------------------------------------------------------------\nconst errors = out.errors;\nconst warnings = out.warnings;\nconst cut = (s, max) => {\n  const t = String(s).slice(0, max);\n  const sp = t.lastIndexOf(' ');\n  return (sp > max * 0.6 ? t.slice(0, sp) : t).replace(/[\\s,;:–-]+$/, '') + '…';\n};\n// The schema cannot express \"optional\" (see manifestSchema.ts), so the planner sends \"\" for\n// an unused string and [] for an unused list. Drop both, and any object left empty by that,\n// so the compiler receives plain optionals and never renders a blank field.\nconst clean = (v) => {\n  if (Array.isArray(v)) {\n    const a = v.map(clean).filter((x) => x !== undefined);\n    return a.length ? a : undefined;\n  }\n  if (v && typeof v === 'object') {\n    const o = {};\n    for (const [k, x] of Object.entries(v)) {\n      const c = clean(x);\n      if (c !== undefined) o[k] = c;\n    }\n    return Object.keys(o).length ? o : undefined;\n  }\n  if (v === null || v === '') return undefined;\n  return v;\n};\nm = clean(m) || {};\n\n// --- presentation ------------------------------------------------------------------\nconst p = m.presentation || {};\nif (!p.title) errors.push('presentation.title is empty');\nif (p.style !== ctx.style) {\n  if (SOFT) { p.style = ctx.style; warnings.push('presentation.style corrected to the requested style'); }\n  else errors.push(`presentation.style must be \"${ctx.style}\"`);\n}\nif (p.language !== ctx.language) {\n  if (SOFT) { p.language = ctx.language; warnings.push('presentation.language corrected'); }\n  else errors.push(`presentation.language must be \"${ctx.language}\"`);\n}\np.audience = p.audience || ctx.audience;\nm.presentation = p;\n\n// --- brand -----------------------------------------------------------------------------\nconst brand = m.brand || {};\nif (Array.isArray(brand.palette)) {\n  const kept = brand.palette.map((c) => String(c).toUpperCase()).filter((c) => PALETTE.includes(c));\n  if (kept.length !== brand.palette.length) warnings.push('palette colours outside the brand set were dropped');\n  brand.palette = kept;\n}\nfor (const k of ['title_font', 'body_font']) {\n  if (brand[k] && !FONTS.includes(brand[k])) {\n    warnings.push(`${k} \"${brand[k]}\" is not approved; the brand default is used`);\n    delete brand[k];\n  }\n}\nm.brand = brand;\n\n// --- slides ----------------------------------------------------------------------------\nlet slides = Array.isArray(m.slides) ? m.slides : [];\nif (slides.length === 0) return fail('slides is empty');\n\nconst range = SLIDE_LIMITS[ctx.style];\nif (slides.length > SLIDE_LIMITS.hard_max) {\n  if (SOFT) { slides = slides.slice(0, SLIDE_LIMITS.hard_max); warnings.push(`only the first ${SLIDE_LIMITS.hard_max} slides were kept`); }\n  else errors.push(`too many slides (${slides.length}); the maximum is ${SLIDE_LIMITS.hard_max}`);\n} else if (slides.length < range.min || slides.length > range.max) {\n  warnings.push(`${slides.length} slides is outside the usual ${range.min}–${range.max} for ${ctx.style}`);\n}\n\nconst ids = new Set();\nconst bodyMax = ctx.style === 'immersive' ? LIMITS.body_immersive : LIMITS.body_minimal;\n\nconst checkStr = (slide, field, value, max) => {\n  if (typeof value !== 'string' || value.length <= max) return value;\n  if (SOFT) { warnings.push(`${slide.id}: ${field} shortened to ${max} characters`); return cut(value, max); }\n  errors.push(`${slide.id}: ${field} is ${value.length} characters; the limit is ${max}`);\n  return value;\n};\nconst checkList = (slide, field, list, maxItems, maxEach) => {\n  if (!Array.isArray(list)) return list;\n  let l = list;\n  if (l.length > maxItems) {\n    if (SOFT) { warnings.push(`${slide.id}: ${field} trimmed to ${maxItems} items`); l = l.slice(0, maxItems); }\n    else errors.push(`${slide.id}: ${field} has ${l.length} items; the limit is ${maxItems}`);\n  }\n  return maxEach ? l.map((x) => (typeof x === 'string' ? checkStr(slide, `${field} item`, x, maxEach) : x)) : l;\n};\n\nslides.forEach((slide, i) => {\n  slide.id = String(slide.id || `slide_${i + 1}`).replace(/[^A-Za-z0-9_-]+/g, '_');\n  if (ids.has(slide.id)) {\n    const base = slide.id; let n = 2;\n    while (ids.has(`${base}_${n}`)) n++;\n    slide.id = `${base}_${n}`;\n    warnings.push(`duplicate slide id \"${base}\" renamed`);\n  }\n  ids.add(slide.id);\n\n  if (!TYPES.includes(slide.type)) {\n    if (SOFT) { const t = i === 0 ? 'cover' : i === slides.length - 1 ? 'closing' : 'itinerary_day'; warnings.push(`${slide.id}: unknown type \"${slide.type}\" treated as ${t}`); slide.type = t; }\n    else errors.push(`${slide.id}: unknown slide type \"${slide.type}\"`);\n  }\n  if (!LAYOUTS.includes(slide.layout)) {\n    if (SOFT) { slide.layout = DEFAULT_LAYOUT[slide.type] || 'split_photo_text'; warnings.push(`${slide.id}: unknown layout replaced by ${slide.layout}`); }\n    else errors.push(`${slide.id}: unknown layout \"${slide.layout}\"`);\n  }\n\n  const c = slide.copy || {};\n  const isCover = slide.type === 'cover';\n  c.eyebrow = checkStr(slide, 'eyebrow', c.eyebrow, LIMITS.eyebrow);\n  c.title = checkStr(slide, 'title', c.title, isCover ? LIMITS.cover_title : LIMITS.title);\n  c.subtitle = checkStr(slide, 'subtitle', c.subtitle, LIMITS.subtitle);\n  c.body = checkStr(slide, 'body', c.body, bodyMax);\n  c.day_label = checkStr(slide, 'day_label', c.day_label, LIMITS.day_label);\n  c.cta = checkStr(slide, 'cta', c.cta, LIMITS.cta);\n  c.meta = checkList(slide, 'meta', c.meta, LIMITS.meta_items, LIMITS.meta_item);\n  c.included = checkList(slide, 'included', c.included, LIMITS.list_items, LIMITS.list_item);\n  c.excluded = checkList(slide, 'excluded', c.excluded, LIMITS.list_items, LIMITS.list_item);\n  c.stops = checkList(slide, 'stops', c.stops, LIMITS.stops, 0);\n  c.options = checkList(slide, 'options', c.options, LIMITS.options, 0);\n  c.cards = checkList(slide, 'cards', c.cards, LIMITS.cards, 0);\n  if (Array.isArray(c.cards)) {\n    c.cards = c.cards.map((card) => ({ ...card, title: checkStr(slide, 'card title', card.title, LIMITS.card_title), body: checkStr(slide, 'card body', card.body, LIMITS.card_body) }));\n  }\n  if (!c.title) errors.push(`${slide.id}: title is required`);\n  slide.copy = c;\n\n  // Assets: counts and the source policy.\n  let photos = 0, decoratives = 0;\n  const assets = [];\n  for (const a of slide.assets || []) {\n    if (a.purpose === 'decorative_element') {\n      if (decoratives++ >= 1) { warnings.push(`${slide.id}: extra decorative element dropped`); continue; }\n    } else if (photos++ >= 3) { warnings.push(`${slide.id}: more than three photos; extras dropped`); continue; }\n\n    const named = a.subject_kind === 'named_property' || a.subject_kind === 'brand_element';\n    if (a.source === 'workdrive') {\n      const match = String(a.asset_match || '').toLowerCase();\n      if (!match || !known.has(match)) {\n        a.source = named ? 'placeholder' : 'pexels';\n        warnings.push(`${slide.id}: \"${a.asset_match || '?'}\" is not in the asset index; using ${a.source}`);\n      }\n    }\n    if (named && a.source === 'pexels') {\n      if (SOFT) { a.source = 'placeholder'; warnings.push(`${slide.id}: a named property cannot use a stock photo; placeholder used`); }\n      else errors.push(`${slide.id}: ${a.purpose} is a named property and must not use pexels`);\n    }\n    if (a.source === 'pexels' && !a.fallback_query) {\n      if (SOFT) { a.source = 'placeholder'; warnings.push(`${slide.id}: pexels asset without a query; placeholder used`); }\n      else errors.push(`${slide.id}: ${a.purpose} uses pexels but has no fallback_query`);\n    }\n    assets.push(a);\n  }\n  slide.assets = assets;\n});\n\nif (slides[0].type !== 'cover') errors.push('the first slide must be the cover');\nif (slides[slides.length - 1].type !== 'closing') errors.push('the last slide must be the closing slide');\nif (ctx.style === 'immersive' && slides[0].layout !== 'full_bleed_hero_with_left_copy') {\n  if (SOFT) { slides[0].layout = 'full_bleed_hero_with_left_copy'; warnings.push('cover layout set to the full-bleed hero'); }\n  else errors.push('an immersive cover must use full_bleed_hero_with_left_copy');\n}\nfor (let i = 2; i < slides.length; i++) {\n  if (slides[i].layout === slides[i - 1].layout && slides[i].layout === slides[i - 2].layout) {\n    const msg = `slides ${slides[i - 2].id}, ${slides[i - 1].id}, ${slides[i].id} use the same layout three times in a row`;\n    if (SOFT) warnings.push(msg); else errors.push(msg);\n    break;\n  }\n}\n\nm.slides = slides;\nout.manifest = m;\nout.valid = errors.length === 0;\nreturn [{ json: out }];\n",
+        "mode": "runOnceForAllItems"
+      }
+    },
+    {
+      "id": "89b4cb74-a84a-4833-a189-b7e15bc1e34e",
+      "name": "Manifest valid (2)?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        4680,
+        220
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "ea35255f-dfc5-400d-a880-f54bc078cfcf",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "02af67eb-0634-4a52-a750-69be4fc6e90c",
+      "name": "Final manifest",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3900,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// Final manifest — runs once. Whichever validation produced a usable manifest wins: the\n// second attempt if it ran, otherwise the first. Later nodes read\n// `$('Final manifest').first().json.manifest` and never care which path was taken.\nlet v = null;\ntry {\n  v = $('Validate manifest (2)').first().json;\n} catch (e) {\n  v = null;\n}\nif (!v || !v.valid) v = $('Validate manifest').first().json;\nif (!v.valid) throw new Error('No valid manifest: ' + v.errors.join('; '));\n\nconst usage = v.usage || {};\nreturn [\n  {\n    json: {\n      manifest: v.manifest,\n      warnings: v.warnings || [],\n      meta: {\n        model: v.model || $('Context').first().json.model,\n        usage,\n        cacheRead: usage.cache_read_input_tokens || 0,\n        attempts: v.attempt,\n      },\n    },\n  },\n];\n",
+        "mode": "runOnceForAllItems"
+      }
+    },
+    {
+      "id": "e070da3e-56cf-4da5-a8c9-c776b4e34f33",
+      "name": "Status: resolving assets",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        460
+      ],
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $('Context').first().json.appUrl }}/api/presentations/jobs/{{ $('Context').first().json.jobId }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'resolving_assets', step: 'Looking for photographs…', meta: $json.meta, warnings: $json.warnings }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "n8n → Tools Suite (bearer)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "id": "17ecd6f1-749d-4501-a141-f2c7664c9a15",
+      "name": "Flatten requirements",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        260,
+        460
+      ],
+      "parameters": {
+        "jsCode": "// Flatten requirements — runs once, returns one item per asset the plan asks for.\n//\n// A layout's purpose decides the orientation and the smallest acceptable width; a hero\n// photograph stretched across the slide needs far more pixels than a card thumbnail.\nconst m = $('Final manifest').first().json.manifest;\n\nfunction hint(layout, purpose) {\n  if (purpose === 'decorative_element') return { orientation: 'landscape', minWidth: 400 };\n  if (layout === 'full_bleed_hero_with_left_copy' || layout === 'closing_story') return { orientation: 'landscape', minWidth: 1920 };\n  if (layout === 'asymmetric_two_photo_editorial') {\n    return purpose === 'primary_photo' ? { orientation: 'landscape', minWidth: 1600 } : { orientation: 'portrait', minWidth: 1000 };\n  }\n  if (layout === 'split_photo_text') return { orientation: 'landscape', minWidth: 1400 };\n  return { orientation: 'landscape', minWidth: 1200 };\n}\n\nconst items = [];\nfor (const slide of m.slides) {\n  for (const a of slide.assets || []) {\n    const h = hint(slide.layout, a.purpose);\n    items.push({\n      json: {\n        order: items.length,\n        slideId: slide.id,\n        purpose: a.purpose,\n        source: a.source,\n        subject_kind: a.subject_kind,\n        asset_match: a.asset_match || '',\n        query: a.fallback_query || '',\n        orientation: a.orientation || h.orientation,\n        minWidth: h.minWidth,\n      },\n    });\n  }\n}\n\n// A node with no input items never runs, and everything after it would be skipped. A deck\n// with no photos at all still has to reach the compiler, so emit a marker item instead.\nif (items.length === 0) items.push({ json: { order: 0, none: true } });\nreturn items;\n",
+        "mode": "runOnceForAllItems"
+      }
+    },
+    {
+      "id": "479831b5-a7a5-4d72-aef6-37db904e495f",
+      "name": "Route assets",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        520,
+        460
+      ],
+      "parameters": {
+        "jsCode": "// Route assets — runs once over all requirement items. The pluggable first step of the\n// resolver: look for an approved asset, then decide where the photo comes from.\n//\n// Order of precedence, from the business rules: an approved library match wins; a named\n// property or brand element with no match gets the branded placeholder (never a stock\n// photo, even if the planner asked for one); anything generic goes to Pexels.\nconst index = ($('Asset index').first().json || {}).assets || [];\nconst byName = new Map();\nfor (const a of index) {\n  for (const key of [a.filename, a.id]) if (key) byName.set(String(key).toLowerCase(), a);\n}\nconst normalize = (s) => String(s || '').toLowerCase().replace(/\\.[a-z0-9]+$/, '').replace(/[^a-z0-9]+/g, '-');\nconst byNormalized = new Map();\nfor (const a of index) if (a.filename) byNormalized.set(normalize(a.filename), a);\n\nreturn $input.all().map((item) => {\n  const r = { ...item.json };\n  if (r.none) return { json: { ...r, route: 'none' } };\n\n  let resolved = null;\n  if (r.asset_match) {\n    resolved = byName.get(String(r.asset_match).toLowerCase()) || byNormalized.get(normalize(r.asset_match)) || null;\n  }\n  const named = r.subject_kind === 'named_property' || r.subject_kind === 'brand_element' || r.purpose === 'decorative_element';\n\n  if (resolved && resolved.url) {\n    r.route = 'workdrive';\n    r.resolved = { url: resolved.url, id: resolved.id || resolved.workdrive_file_id || '', filename: resolved.filename || '', width: resolved.width, height: resolved.height };\n  } else if (named) {\n    r.route = 'placeholder';\n    if (r.source === 'pexels') r.overridden = 'a named property may not use a stock photo';\n  } else if (r.query) {\n    r.route = 'pexels';\n  } else {\n    r.route = 'placeholder';\n    r.overridden = 'no query for a stock search';\n  }\n  return { json: r };\n});\n",
+        "mode": "runOnceForAllItems"
+      }
+    },
+    {
+      "id": "44e983ec-0f2c-4933-acd3-a7f8db1bbcaf",
+      "name": "Search Pexels?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        780,
+        460
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "de74453e-c144-47ee-a203-b1e7af0ffaaa",
+              "leftValue": "={{ $json.route }}",
+              "rightValue": "pexels",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "327e26d0-5e8e-4e7d-ad97-58e53562a10f",
+      "name": "Pexels — search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1040,
+        460
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Context').first().json.pexelsUrl }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "={{ $json.query }}"
+            },
+            {
+              "name": "orientation",
+              "value": "={{ $json.orientation }}"
+            },
+            {
+              "name": "size",
+              "value": "large"
+            },
+            {
+              "name": "per_page",
+              "value": "8"
+            },
+            {
+              "name": "locale",
+              "value": "en-US"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000,
+          "batching": {
+            "batch": {
+              "batchSize": 5,
+              "batchInterval": 1200
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Pexels"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "ce694579-ba41-4b18-a903-e29aa47e85a7",
+      "name": "Merge",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        1300,
+        460
+      ],
+      "parameters": {
+        "mode": "append",
+        "numberInputs": 2
+      }
+    },
+    {
+      "id": "56afb78f-dadf-4d2b-aa36-d0d9b1dac563",
+      "name": "Select assets",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1560,
+        460
+      ],
+      "parameters": {
+        "jsCode": "// Select assets — runs once over the merged items. Turns search results into the\n// asset map the compiler expects and the audit records the job keeps.\n//\n// The HTTP node replaced each Pexels item's data with the API response, so the requirement\n// each result belongs to is recovered through n8n's paired-item chain (`itemMatching`).\n// Photos are scored for relevance against the query, checked for orientation and size, and\n// never reused within a deck; when nothing acceptable comes back the slot becomes a\n// placeholder with a warning rather than a wrong picture.\nconst items = $input.all();\nconst assets = {};\nconst assetUsage = [];\nconst warnings = [];\nconst used = new Set();\nconst now = new Date().toISOString();\n\nconst tokens = (s) => String(s || '').toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length > 2);\nconst AVOID = /\\b(hotel|resort|villa|room|suite|logo|brand|lobby)\\b/i;\n\nfunction pickPhoto(req, photos) {\n  const q = new Set(tokens(req.query));\n  const landscape = req.orientation !== 'portrait';\n  let best = null;\n  for (const ph of photos) {\n    if (!ph || used.has(ph.id)) continue;\n    const w = ph.width || 0, h = ph.height || 1;\n    const ratio = w / h;\n    if (w < req.minWidth) continue;\n    if (landscape ? ratio < 1.25 : ratio > 0.85) continue;\n    let score = 0;\n    for (const t of tokens(ph.alt)) if (q.has(t)) score += 2;\n    if (AVOID.test(ph.alt || '')) score -= 3;\n    score += Math.min(3, w / 2000);\n    if (!best || score > best.score) best = { ph, score };\n  }\n  return best ? best.ph : null;\n}\n\nfunction downloadUrl(req, ph) {\n  const src = ph.src || {};\n  if (req.orientation === 'portrait') return src.portrait || src.large2x || src.original;\n  return src.large2x || src.large || src.original;\n}\n\nfor (let i = 0; i < items.length; i++) {\n  let req;\n  try {\n    req = $('Route assets').itemMatching(i).json;\n  } catch (e) {\n    warnings.push('a search result could not be matched to its slide');\n    continue;\n  }\n  if (req.none) continue;\n  const ref = `${req.slideId}:${req.purpose}`;\n  const res = items[i].json || {};\n\n  if (req.route === 'workdrive' && req.resolved) {\n    assets[ref] = { url: req.resolved.url, source: 'workdrive', width: req.resolved.width, height: req.resolved.height };\n    assetUsage.push({ slideId: req.slideId, purpose: req.purpose, source: 'workdrive', provider: 'zoho-workdrive', providerImageId: String(req.resolved.id || ''), sourceUrl: req.resolved.url, downloadUrl: req.resolved.url, retrievedAt: now });\n    continue;\n  }\n\n  if (req.route === 'pexels') {\n    const photos = Array.isArray(res.photos) ? res.photos : [];\n    const ph = res.error ? null : pickPhoto(req, photos);\n    if (ph) {\n      used.add(ph.id);\n      const url = downloadUrl(req, ph);\n      assets[ref] = { url, source: 'pexels', width: ph.width, height: ph.height, credit: `Photo by ${ph.photographer} on Pexels` };\n      assetUsage.push({ slideId: req.slideId, purpose: req.purpose, source: 'pexels', provider: 'pexels', providerImageId: String(ph.id), sourceUrl: ph.url, downloadUrl: url, photographer: ph.photographer, licenseUrl: 'https://www.pexels.com/license/', query: req.query, retrievedAt: now });\n      continue;\n    }\n    // Carry the real reason through to the job record: \"the search failed\" alone sends\n    // someone hunting in the wrong place, whereas a code like ERR_INVALID_HTTP_TOKEN names\n    // the credential as the culprit.\n    const why = res.error ? res.error.message || res.error.code || 'error' : null;\n    warnings.push(why\n      ? `${req.slideId}: the stock photo search failed (${why}); a placeholder is used`\n      : `${req.slideId}: no suitable stock photo for \"${req.query}\"; a placeholder is used`);\n  } else if (req.overridden) {\n    warnings.push(`${req.slideId}: ${req.overridden}; a placeholder is used`);\n  }\n\n  if (req.purpose === 'decorative_element') continue; // no placeholder for illustrations: simply omitted\n  assets[ref] = { url: '', source: 'placeholder' };\n  assetUsage.push({ slideId: req.slideId, purpose: req.purpose, source: 'placeholder', retrievedAt: now });\n}\n\nreturn [{ json: { assets, assetUsage, warnings } }];\n",
+        "mode": "runOnceForAllItems"
+      }
+    },
+    {
+      "id": "deb93792-c233-474b-ac71-e29c3bc9b917",
+      "name": "Status: compiling",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1820,
+        460
+      ],
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $('Context').first().json.appUrl }}/api/presentations/jobs/{{ $('Context').first().json.jobId }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'compiling', step: 'Building the presentation…', assets: $json.assetUsage, warnings: $json.warnings }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "n8n → Tools Suite (bearer)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "id": "55f92af3-4f40-4084-a76a-2575c5c70f12",
+      "name": "Compile",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2080,
+        460
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Context').first().json.appUrl }}/api/presentations/compile",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ jobId: $('Context').first().json.jobId, manifest: $('Final manifest').first().json.manifest, assets: $('Select assets').first().json.assets }) }}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "n8n → Tools Suite (bearer)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 10000,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "db7c8fe1-dc5b-401b-a314-e66a857ddaf6",
+      "name": "Status: importing",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2340,
+        460
+      ],
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $('Context').first().json.appUrl }}/api/presentations/jobs/{{ $('Context').first().json.jobId }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'importing', step: 'Importing into Canva…', pptxKey: $json.pptxKey, pptxUrl: $json.pptxUrl, manifestKey: 'presentations/jobs/' + $('Context').first().json.jobId + '/manifest.json', warnings: $json.warnings }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "n8n → Tools Suite (bearer)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "id": "f1d87ede-4f87-4807-ac91-1fa4e5bac982",
+      "name": "Import to Canva?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2600,
+        460
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "36381926-f451-4c5c-af20-8ecfbbe05061",
+              "leftValue": "={{ $('Context').first().json.dryRun }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c4146c2d-fc59-4e0f-a087-3477ecbdc13a",
+      "name": "Status: done (no Canva)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2860,
+        680
+      ],
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $('Context').first().json.appUrl }}/api/presentations/jobs/{{ $('Context').first().json.jobId }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'done', step: 'Ready (Canva skipped).', warnings: ['Canva import was skipped; download the PowerPoint and import it by hand.'] }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "n8n → Tools Suite (bearer)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "id": "eadf7f7d-9595-473c-ad7e-f49501e5c5b1",
+      "name": "Canva — import",
+      "type": "@canva/n8n-nodes-canva.canva",
+      "typeVersion": 1,
+      "position": [
+        2860,
+        460
+      ],
+      "parameters": {
+        "resource": "designImport",
+        "operation": "createImport",
+        "url": "={{ $('Compile').first().json.pptxUrl }}",
+        "title": "={{ $('Context').first().json.title }}",
+        "pollInterval": 3000,
+        "maxWait": 180
+      },
+      "credentials": {
+        "canvaOAuth2Api": {
+          "id": "",
+          "name": "Canva account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "745e4453-eb28-49c4-a1a9-767a428d05b0",
+      "name": "Canva result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3120,
+        460
+      ],
+      "parameters": {
+        "jsCode": "// Canva result — runs once. Reads what the Canva node returned, or the error item it\n// produced when the import failed or timed out, into one shape.\n//\n// It never throws. A Canva failure is not a failed job: the deck is already built and in the\n// bucket, so the job ends as \"done\" with a warning and the PowerPoint to download, which is\n// what the business rules ask for.\nconst r = $input.first().json || {};\nconst job = r.job || {};\nconst design = (job.result && Array.isArray(job.result.designs) && job.result.designs[0]) || {};\nconst urls = design.urls || {};\nconst ok = job.status === 'success' && !!design.id;\n\n// n8n puts a string here for some failures and an object for others.\nconst text = (e) => (!e ? '' : typeof e === 'string' ? e : e.message || e.description || e.code || '');\n\nreturn [\n  {\n    json: {\n      ok,\n      designId: design.id || '',\n      editUrl: urls.edit_url || '',\n      viewUrl: urls.view_url || '',\n      error: ok ? '' : text(r.error) || text(job.error) || 'Canva did not return a design',\n    },\n  },\n];\n",
+        "mode": "runOnceForAllItems"
+      }
+    },
+    {
+      "id": "d39b1f06-f41d-4338-ab37-12018b2d002b",
+      "name": "Canva OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3380,
+        460
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "a9e540f0-6f29-480c-a044-fd6c3deae97c",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "467f769d-27f8-4ba4-abfd-f765aef61ad2",
+      "name": "Status: done (with Canva)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3640,
+        460
+      ],
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $('Context').first().json.appUrl }}/api/presentations/jobs/{{ $('Context').first().json.jobId }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'done', step: 'Ready.', canva: { designId: $json.designId, editUrl: $json.editUrl, viewUrl: $json.viewUrl || undefined } }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "n8n → Tools Suite (bearer)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "id": "22e23dba-0e19-44c7-aa5b-c41fca782a49",
+      "name": "Status: done (Canva failed)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3640,
+        680
+      ],
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $('Context').first().json.appUrl }}/api/presentations/jobs/{{ $('Context').first().json.jobId }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'done', step: 'Ready (no Canva link).', warnings: ['Canva import failed: ' + ($json.error || 'unknown error') + '. Download the PowerPoint and import it by hand.'] }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "n8n → Tools Suite (bearer)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "id": "80dbad89-c85f-425e-a76a-90d2c9622b0f",
+      "name": "Failure",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2080,
+        900
+      ],
+      "parameters": {
+        "jsCode": "// Failure — runs once. Every error output in the workflow lands here. It names the node that\n// failed and carries a readable message to the app, which shows it under the timeline.\nconst item = $input.first().json || {};\nlet jobId = '';\ntry {\n  jobId = $('Context').first().json.jobId;\n} catch (e) {\n  jobId = (($('Webhook').first().json || {}).body || {}).jobId || '';\n}\nconst raw =\n  (item.error && (item.error.message || item.error.description || item.error)) ||\n  item.message ||\n  (Array.isArray(item.errors) ? item.errors.join('; ') : '') ||\n  'Unknown error';\nconst step = $prevNode.name;\n\n// Which timeline row failed, for the page: map node names onto job statuses.\nconst STATUS_FOR = [\n  [/Claude|manifest/i, 'planning'],\n  [/Pexels|asset|requirement|route/i, 'resolving_assets'],\n  [/Compile/i, 'compiling'],\n  [/Canva|PPTX/i, 'importing'],\n];\nlet status = 'queued';\nfor (const [re, s] of STATUS_FOR) if (re.test(step)) { status = s; break; }\n\nreturn [{ json: { jobId, step, status, message: String(raw).slice(0, 500) } }];\n",
+        "mode": "runOnceForAllItems"
+      }
+    },
+    {
+      "id": "a9e32369-9dd4-4163-a8eb-999534a46703",
+      "name": "Status: failed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2340,
+        900
+      ],
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $('Context').first().json.appUrl }}/api/presentations/jobs/{{ $('Context').first().json.jobId }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'failed', step: 'Failed at ' + $json.step, error: { message: $json.message, step: $json.status } }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "n8n → Tools Suite (bearer)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate payload": {
+      "main": [
+        [
+          {
+            "node": "Payload valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Payload valid?": {
+      "main": [
+        [
+          {
+            "node": "Respond 202",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 400",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond 202": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Context": {
+      "main": [
+        [
+          {
+            "node": "Read job",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read job": {
+      "main": [
+        [
+          {
+            "node": "Can it run?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Can it run?": {
+      "main": [
+        [
+          {
+            "node": "Run?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run?": {
+      "main": [
+        [
+          {
+            "node": "Status: planning",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Status: planning": {
+      "main": [
+        [
+          {
+            "node": "Asset index",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Asset index": {
+      "main": [
+        [
+          {
+            "node": "Build Claude request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Claude request": {
+      "main": [
+        [
+          {
+            "node": "Claude — plan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude — plan": {
+      "main": [
+        [
+          {
+            "node": "Validate manifest",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate manifest": {
+      "main": [
+        [
+          {
+            "node": "Manifest valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manifest valid?": {
+      "main": [
+        [
+          {
+            "node": "Final manifest",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build retry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build retry": {
+      "main": [
+        [
+          {
+            "node": "Claude — retry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude — retry": {
+      "main": [
+        [
+          {
+            "node": "Validate manifest (2)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate manifest (2)": {
+      "main": [
+        [
+          {
+            "node": "Manifest valid (2)?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manifest valid (2)?": {
+      "main": [
+        [
+          {
+            "node": "Final manifest",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Final manifest": {
+      "main": [
+        [
+          {
+            "node": "Status: resolving assets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Status: resolving assets": {
+      "main": [
+        [
+          {
+            "node": "Flatten requirements",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Flatten requirements": {
+      "main": [
+        [
+          {
+            "node": "Route assets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route assets": {
+      "main": [
+        [
+          {
+            "node": "Search Pexels?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Pexels?": {
+      "main": [
+        [
+          {
+            "node": "Pexels — search",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Pexels — search": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Select assets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Select assets": {
+      "main": [
+        [
+          {
+            "node": "Status: compiling",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Status: compiling": {
+      "main": [
+        [
+          {
+            "node": "Compile",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compile": {
+      "main": [
+        [
+          {
+            "node": "Status: importing",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Status: importing": {
+      "main": [
+        [
+          {
+            "node": "Import to Canva?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Import to Canva?": {
+      "main": [
+        [
+          {
+            "node": "Canva — import",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Status: done (no Canva)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Canva — import": {
+      "main": [
+        [
+          {
+            "node": "Canva result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Canva result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Canva result": {
+      "main": [
+        [
+          {
+            "node": "Canva OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Canva OK?": {
+      "main": [
+        [
+          {
+            "node": "Status: done (with Canva)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Status: done (Canva failed)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Failure": {
+      "main": [
+        [
+          {
+            "node": "Status: failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  },
+  "pinData": {},
+  "active": false
+}

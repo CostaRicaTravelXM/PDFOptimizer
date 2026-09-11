@@ -1,9 +1,9 @@
-// Fallo — runs once. Every error output in the workflow lands here. It names the node that
+// Failure — runs once. Every error output in the workflow lands here. It names the node that
 // failed and carries a readable message to the app, which shows it under the timeline.
 const item = $input.first().json || {};
 let jobId = '';
 try {
-  jobId = $('Contexto').first().json.jobId;
+  jobId = $('Context').first().json.jobId;
 } catch (e) {
   jobId = (($('Webhook').first().json || {}).body || {}).jobId || '';
 }
@@ -16,9 +16,9 @@ const step = $prevNode.name;
 
 // Which timeline row failed, for the page: map node names onto job statuses.
 const STATUS_FOR = [
-  [/Claude|manifest|petición/i, 'planning'],
-  [/Pexels|activos|requisitos|ruta/i, 'resolving_assets'],
-  [/Compilar/i, 'compiling'],
+  [/Claude|manifest/i, 'planning'],
+  [/Pexels|asset|requirement|route/i, 'resolving_assets'],
+  [/Compile/i, 'compiling'],
   [/Canva|PPTX/i, 'importing'],
 ];
 let status = 'queued';

@@ -1,10 +1,10 @@
-// WorkDrive y ruta — runs once over all requirement items. The pluggable first step of the
+// Route assets — runs once over all requirement items. The pluggable first step of the
 // resolver: look for an approved asset, then decide where the photo comes from.
 //
 // Order of precedence, from the business rules: an approved library match wins; a named
 // property or brand element with no match gets the branded placeholder (never a stock
 // photo, even if the planner asked for one); anything generic goes to Pexels.
-const index = ($('Índice de activos').first().json || {}).assets || [];
+const index = ($('Asset index').first().json || {}).assets || [];
 const byName = new Map();
 for (const a of index) {
   for (const key of [a.filename, a.id]) if (key) byName.set(String(key).toLowerCase(), a);

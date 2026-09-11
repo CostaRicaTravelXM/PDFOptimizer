@@ -1,8 +1,8 @@
-// Construir reintento — runs once. One more chance for the planner: the same request plus
+// Build retry — runs once. One more chance for the planner: the same request plus
 // its own answer and the list of what was wrong. System prompt and brief are unchanged so
 // both come back from the prompt cache.
-const prev = $('Construir petición Claude').first().json.request;
-const v = $('Validar manifest').first().json;
+const prev = $('Build Claude request').first().json.request;
+const v = $('Validate manifest').first().json;
 
 const messages = [
   ...prev.messages,

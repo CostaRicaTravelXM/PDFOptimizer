@@ -117,12 +117,12 @@ test('validate-payload rejects short text and bad style', () => {
 // --- 2. context -----------------------------------------------------------------------------------
 let ctx;
 test('contexto trims the app URL and honours dryRun', () => {
-  [{ json: ctx }] = runCode('contexto.js', { inputs: [{ json: {} }], nodes });
+  [{ json: ctx }] = runCode('context.js', { inputs: [{ json: {} }], nodes });
   assert.equal(ctx.appUrl, 'https://tools.example.com');
   assert.equal(ctx.dryRun, true, 'the sample payload sets dryRun');
   assert.equal(ctx.model, 'claude-opus-5');
 });
-nodes['Contexto'] = [{ json: ctx }];
+nodes['Context'] = [{ json: ctx }];
 
 test('can-run allows queued and failed, refuses running', () => {
   const ok = runCode('can-run.js', { inputs: [{ json: { status: 'queued' } }], nodes })[0].json;
@@ -132,7 +132,7 @@ test('can-run allows queued and failed, refuses running', () => {
 });
 
 // --- 3. request -----------------------------------------------------------------------------------
-nodes['Índice de activos'] = runCode('asset-index.js', { inputs: [{ json: {} }], nodes });
+nodes['Asset index'] = runCode('asset-index.js', { inputs: [{ json: {} }], nodes });
 let request;
 test('build-claude-request has cache breakpoints, schema and the brief', () => {
   [{ json: { request } }] = runCode('build-claude-request.js', { inputs: [{ json: {} }], nodes });
@@ -147,7 +147,7 @@ test('build-claude-request has cache breakpoints, schema and the brief', () => {
   assert.ok(request.messages[0].content[1].text.includes('None. Use source "placeholder"'), 'empty index explained');
   assert.equal(request.temperature, undefined);
 });
-nodes['Construir petición Claude'] = [{ json: { request } }];
+nodes['Build Claude request'] = [{ json: { request } }];
 
 // --- 4. validation, retry, final --------------------------------------------------------------
 let v1;
@@ -159,7 +159,7 @@ test('validate-manifest attempt 1 flags the over-long title only', () => {
   assert.ok(v1.warnings.some((w) => w.includes('palette')), 'off-brand palette warned');
   assert.ok(typeof v1.raw === 'string');
 });
-nodes['Validar manifest'] = [{ json: v1 }];
+nodes['Validate manifest'] = [{ json: v1 }];
 
 test('validate-manifest fails hard on max_tokens and bad JSON', () => {
   const cut = runCode('validate-manifest.js', { inputs: [{ json: claudeResponse({}, { stop_reason: 'max_tokens' }) }], nodes, extra: { __ATTEMPT__: '1' } })[0].json;
@@ -195,7 +195,7 @@ test('validate-manifest attempt 2 repairs and passes', () => {
   assert.equal(lt.copy.subtitle, undefined, 'nulls stripped');
   assert.ok(v2.warnings.some((w) => w.includes('shortened')));
 });
-nodes['Validar manifest (2)'] = [{ json: v2 }];
+nodes['Validate manifest (2)'] = [{ json: v2 }];
 
 let final;
 test('manifest-final prefers the repaired attempt', () => {
@@ -204,7 +204,7 @@ test('manifest-final prefers the repaired attempt', () => {
   assert.equal(final.manifest.slides.length, 9);
   assert.equal(final.meta.usage.output_tokens, 7000);
 });
-nodes['Manifest final'] = [{ json: final }];
+nodes['Final manifest'] = [{ json: final }];
 
 // --- 4b. the app agrees --------------------------------------------------------------------------
 const bundle = join(root, '.check', 'n8n-schema.bundle.mjs');
@@ -235,7 +235,7 @@ test('flatten-requirements emits one item per asset with size hints', () => {
 });
 test('flatten-requirements emits a marker when there are no assets', () => {
   const bare = { ...final, manifest: { ...final.manifest, slides: final.manifest.slides.map((s) => ({ ...s, assets: [] })) } };
-  const out = runCode('flatten-requirements.js', { inputs: [{ json: {} }], nodes: { ...nodes, 'Manifest final': [{ json: bare }] } });
+  const out = runCode('flatten-requirements.js', { inputs: [{ json: {} }], nodes: { ...nodes, 'Final manifest': [{ json: bare }] } });
   assert.equal(out.length, 1);
   assert.equal(out[0].json.none, true);
 });
@@ -245,7 +245,7 @@ test('route-assets: generic → pexels, named/decorative → placeholder, index 
   const index = [{ json: { assets: [{ id: 'wd1', filename: 'costa-rica_caribbean_puerto-viejo_beach_landscape_01.jpg', url: 'https://cdn.example.com/wd1.jpg', width: 2400, height: 1600 }] } }];
   const withMatch = reqs.map((r) => ({ json: { ...r.json } }));
   withMatch[0].json.asset_match = 'costa-rica_caribbean_puerto-viejo_beach_landscape_01.jpg';
-  routed = runCode('route-assets.js', { inputs: withMatch, nodes: { ...nodes, 'Índice de activos': index } });
+  routed = runCode('route-assets.js', { inputs: withMatch, nodes: { ...nodes, 'Asset index': index } });
   const by = (id, p) => routed.find((r) => r.json.slideId === id && r.json.purpose === p).json;
   assert.equal(by('cover', 'background').route, 'workdrive');
   assert.equal(by('cover', 'decorative_element').route, 'placeholder');
@@ -253,7 +253,7 @@ test('route-assets: generic → pexels, named/decorative → placeholder, index 
   assert.equal(by('hotels', 'primary_photo').route, 'placeholder');
   assert.equal(by('day_01', 'primary_photo').route, 'pexels');
 });
-nodes['WorkDrive y ruta'] = routed;
+nodes['Route assets'] = routed;
 
 test('select-assets builds the map, dedupes photos and falls back to placeholders', () => {
   const photo = (id, w, h, alt) => ({ id, width: w, height: h, alt, url: `https://www.pexels.com/photo/${id}/`, photographer: 'Ana Test', src: { original: `https://images.pexels.com/${id}/o.jpg`, large2x: `https://images.pexels.com/${id}/l2x.jpg`, large: `https://images.pexels.com/${id}/l.jpg`, portrait: `https://images.pexels.com/${id}/p.jpg` } });
@@ -300,19 +300,19 @@ test('canva-result reads a finished import, and never throws on failure', () => 
   assert.equal(runCode('canva-result.js', { inputs: [{ json: {} }] })[0].json.ok, false);
 });
 test('fail maps the failing node to a timeline status', () => {
-  const [{ json }] = runCode('fail.js', { inputs: [{ json: { error: { message: 'HTTP 529 overloaded' } } }], nodes, prevNode: 'Claude — planificar' });
+  const [{ json }] = runCode('fail.js', { inputs: [{ json: { error: { message: 'HTTP 529 overloaded' } } }], nodes, prevNode: 'Claude — plan' });
   assert.equal(json.status, 'planning');
   assert.equal(json.jobId, payload.jobId);
   assert.ok(json.message.includes('529'));
-  assert.equal(runCode('fail.js', { inputs: [{ json: {} }], nodes, prevNode: 'Compilar' })[0].json.status, 'compiling');
+  assert.equal(runCode('fail.js', { inputs: [{ json: {} }], nodes, prevNode: 'Compile' })[0].json.status, 'compiling');
 });
 test('error-find-job digs the job id out of execution data', () => {
   const exec = { data: { resultData: { runData: { Webhook: [{ data: { main: [[{ json: { body: { jobId: payload.jobId } } }]] } }] } } } };
-  const err = [{ json: { execution: { id: '123', error: { message: 'boom' }, lastNodeExecuted: 'Compilar' } } }];
+  const err = [{ json: { execution: { id: '123', error: { message: 'boom' }, lastNodeExecuted: 'Compile' } } }];
   const [{ json }] = runCode('error-find-job.js', { inputs: [{ json: exec }], nodes: { 'Error Trigger': err } });
   assert.equal(json.found, true);
   assert.equal(json.jobId, payload.jobId);
-  assert.equal(json.node, 'Compilar');
+  assert.equal(json.node, 'Compile');
 });
 
 // --- report -----------------------------------------------------------------------------------------
