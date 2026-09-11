@@ -53,17 +53,26 @@ const cut = (s, max) => {
   const sp = t.lastIndexOf(' ');
   return (sp > max * 0.6 ? t.slice(0, sp) : t).replace(/[\s,;:–-]+$/, '') + '…';
 };
-// Null means "not used"; drop those keys so the compiler sees plain optionals.
+// The schema cannot express "optional" (see manifestSchema.ts), so the planner sends "" for
+// an unused string and [] for an unused list. Drop both, and any object left empty by that,
+// so the compiler receives plain optionals and never renders a blank field.
 const clean = (v) => {
-  if (Array.isArray(v)) return v.map(clean);
+  if (Array.isArray(v)) {
+    const a = v.map(clean).filter((x) => x !== undefined);
+    return a.length ? a : undefined;
+  }
   if (v && typeof v === 'object') {
     const o = {};
-    for (const [k, x] of Object.entries(v)) if (x !== null && x !== undefined) o[k] = clean(x);
-    return o;
+    for (const [k, x] of Object.entries(v)) {
+      const c = clean(x);
+      if (c !== undefined) o[k] = c;
+    }
+    return Object.keys(o).length ? o : undefined;
   }
+  if (v === null || v === '') return undefined;
   return v;
 };
-m = clean(m);
+m = clean(m) || {};
 
 // --- presentation ------------------------------------------------------------------
 const p = m.presentation || {};

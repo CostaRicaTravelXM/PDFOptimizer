@@ -41,13 +41,15 @@ Structural rules:
 - Include an "accommodation" slide when hotels are named (1 to {{OPTIONS_MAX}} options); an "inclusions" slide when the brief lists inclusions or exclusions.
 - Slide count: minimal {{MIN_MINIMAL}}–{{MAX_MINIMAL}}, immersive {{MIN_IMMERSIVE}}–{{MAX_IMMERSIVE}}. Never more than {{HARD_MAX}}.
 - Slide ids are short, unique, snake_case (cover, overview, route, day_01, hotels, inclusions, closing).
-- "theme" is "light" by default; "dark" only for slides that sit on a photograph; "accent" for a section change.
+- "theme" is required on every slide: use "light" unless the slide's text sits on a photograph, which is "dark"; "accent" marks a section change.
 
 ## Copy limits (characters)
 
 {{COPY_LIMITS}}
 
-Every slide gets a "title". "eyebrow" is a short kicker such as the destination or section name. "day_label" is used only on itinerary_day slides ("Day 1", "Día 1"). "meta" holds short factual lines (transfer, flight, overnight). "stops" belong to route slides; "options" to accommodation slides; "cards" or "included"/"excluded" to inclusions slides; "contact" and "cta" to the closing slide. Leave fields you do not use as null.
+Every slide gets a "title". "eyebrow" is a short kicker such as the destination or section name. "day_label" is used only on itinerary_day slides ("Day 1", "Día 1"). "meta" holds short factual lines (transfer, flight, overnight). "stops" belong to route slides; "options" to accommodation slides; "cards" or "included"/"excluded" to inclusions slides; "contact" and "cta" to the closing slide.
+
+Every field in the schema is required, so nothing may be omitted: a text field you are not using is the empty string "", and a list you are not using is the empty array []. Never write the word "null".
 
 ## Assets
 
@@ -65,7 +67,7 @@ For every asset set "subject_kind":
 - "named_property": a specific hotel, lodge, room, vehicle, airline, or partner. Source "workdrive" only with an exact index match; otherwise "placeholder". Never "pexels".
 - "brand_element": logos and wildlife illustrations. Source "workdrive" only; otherwise "placeholder" (or omit the decorative element).
 
-"fallback_query" is written in English, 4 to 8 words, specific to Costa Rica where possible ("Puerto Viejo Caribbean beach palm trees", "Monteverde cloud forest hanging bridge"), never a brand or hotel name. Set "orientation" to "portrait" only for secondary photos in editorial layouts.
+"fallback_query" is written in English, 4 to 8 words, specific to Costa Rica where possible ("Puerto Viejo Caribbean beach palm trees", "Monteverde cloud forest hanging bridge"), never a brand or hotel name. "orientation" is required on every asset: "landscape" everywhere except the secondary photo of an asymmetric_two_photo_editorial slide, which is "portrait".
 
 ## Language
 
