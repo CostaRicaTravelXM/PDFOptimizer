@@ -107,7 +107,7 @@ const uuid = (seed) => {
 const CRED = {
   toolsSecret: { httpHeaderAuth: { id: '', name: 'Tools Suite → n8n (x-tools-secret)' } },
   bearer: { httpHeaderAuth: { id: '', name: 'n8n → Tools Suite (bearer)' } },
-  anthropic: { anthropicApi: { id: '', name: 'Anthropic' } },
+  anthropic: { anthropicApi: { id: '', name: 'Anthropic account TravelXM' } },
   pexels: { httpHeaderAuth: { id: '', name: 'Pexels' } },
   canva: { oAuth2Api: { id: '', name: 'Canva Connect' } },
   n8nApi: { n8nApi: { id: '', name: 'n8n API' } },

@@ -354,7 +354,7 @@
       "credentials": {
         "anthropicApi": {
           "id": "",
-          "name": "Anthropic"
+          "name": "Anthropic account TravelXM"
         }
       },
       "retryOnFail": true,
@@ -457,7 +457,7 @@
       "credentials": {
         "anthropicApi": {
           "id": "",
-          "name": "Anthropic"
+          "name": "Anthropic account TravelXM"
         }
       },
       "retryOnFail": true,

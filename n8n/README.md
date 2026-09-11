@@ -6,6 +6,14 @@ n8n planifica las diapositivas con Claude, resuelve las fotos, pide a la app que
 PPTX y lo importa en Canva. La app es la única que escribe el registro del job: n8n informa
 cada paso con `PATCH /api/presentations/jobs/<id>`.
 
+**Ya desplegados** en `blocktxm.app.n8n.cloud`, proyecto *Personal* → carpeta
+*TravelXM Workflows* (inactivos hasta terminar la configuración):
+
+| Workflow | Id | Enlace |
+|---|---|---|
+| TravelXM — Presentaciones · Main | `VympOEgV8uXSA6LL` | https://blocktxm.app.n8n.cloud/workflow/VympOEgV8uXSA6LL |
+| TravelXM — Presentaciones · Error handler | `4tRHOBX8n0SuFGC2` | https://blocktxm.app.n8n.cloud/workflow/4tRHOBX8n0SuFGC2 |
+
 Archivos:
 
 | Archivo | Qué es |
@@ -14,6 +22,7 @@ Archivos:
 | `workflows/presentaciones-error-handler.json` | Marca el job como fallido si el principal muere fuera de su propio manejo de errores |
 | `workflows/system-prompt.generated.md` | El system prompt tal como se envía a Claude (generado, sólo para leer) |
 | `src/` | Fuentes: prompt, código de cada nodo Code, constantes compartidas con la app |
+| `create-secrets.mjs` | Genera y crea en n8n las dos credenciales de secreto compartido |
 | `fixtures/sample-payload.json` | Un cuerpo de webhook real (con `dryRun: true`) para probar |
 | `fixtures/sample-claude-response.json` | Una respuesta de Claude válida para fijar (*pin*) en el nodo *Claude — planificar* |
 
@@ -51,14 +60,18 @@ curso (`force: true` en el cuerpo lo fuerza).
 
 ### 1. Credenciales (crear antes de importar)
 
-| Nombre exacto | Tipo en n8n | Valor |
-|---|---|---|
-| `Tools Suite → n8n (x-tools-secret)` | Header Auth | Name `x-tools-secret`, Value = `N8N_SHARED_SECRET` de la app |
-| `n8n → Tools Suite (bearer)` | Header Auth | Name `Authorization`, Value `Bearer <PRESENTATIONS_COMPILE_SECRET>` |
-| `Anthropic` | Anthropic | API key |
-| `Pexels` | Header Auth | Name `Authorization`, Value = la API key de Pexels (sin "Bearer") |
-| `Canva Connect` | OAuth2 API | Ver §Canva |
-| `n8n API` | n8n API | Una API key de esta instancia (Settings → n8n API); sólo la usa el error handler |
+| Nombre exacto | Tipo en n8n | Estado | Valor |
+|---|---|---|---|
+| `Tools Suite → n8n (x-tools-secret)` | Header Auth | ✅ creada | Name `x-tools-secret`; el mismo valor va en Vercel como `N8N_SHARED_SECRET` |
+| `n8n → Tools Suite (bearer)` | Header Auth | ✅ creada | Name `Authorization`, `Bearer <secreto>`; el secreto va en Vercel como `PRESENTATIONS_COMPILE_SECRET` |
+| `Anthropic account TravelXM` | Anthropic | ✅ existe | API key de Anthropic |
+| `Pexels` | Header Auth | ❌ falta | Name `Authorization`, Value = la API key de Pexels (sin "Bearer") |
+| `Canva Connect` | OAuth2 API | ❌ falta | Ver §Canva |
+| `n8n API` | n8n API | ❌ falta | Una API key de esta instancia (Settings → n8n API); sólo la usa el error handler |
+
+Las dos primeras las generó `node n8n/create-secrets.mjs` (secretos aleatorios, creados una
+sola vez). Sus valores se pueden volver a ver en la UI de credenciales de n8n; tienen que
+coincidir con los de Vercel.
 
 Los nombres importan: el JSON referencia las credenciales por nombre y n8n las enlaza al
 importar cuando coinciden. Si no coinciden, abrir cada nodo y elegirla a mano.
@@ -74,10 +87,16 @@ importar cuando coinciden. Si no coinciden, abrir cada nodo y elegirla a mano.
 N8N_BASE_URL=https://xxx.app.n8n.cloud N8N_API_KEY=... npm run n8n:deploy
 ```
 
-crea o actualiza los dos workflows por nombre (`--activate` activa el principal).
+crea o actualiza los dos workflows **dentro de la carpeta `TravelXM Workflows`**, buscándolos
+por nombre (así no se duplican al re-desplegar) y enlazando las credenciales que existan por
+su nombre, para que los nodos queden ya configurados. `--dry-run` enseña lo que haría sin
+tocar nada; `--activate` activa el principal; `--folder` / `--project` cambian el destino.
 
 ### 3. Configurar
 
+0. Crear las credenciales que faltan (`Pexels`, `Canva Connect`, `n8n API`) con esos nombres
+   exactos y volver a ejecutar `npm run n8n:deploy`, o elegirlas a mano en los nodos
+   *Pexels — buscar*, *Canva — crear import*, *Canva — consultar* y *Leer ejecución*.
 1. En el principal, nodo **Config**: `TOOLS_APP_URL` = la app en Vercel (sin barra final),
    `CANVA_ENABLED` = `true` cuando la credencial de Canva esté conectada; `CLAUDE_MODEL`
    (`claude-opus-5`) y `CLAUDE_EFFORT` (`medium`) se pueden ajustar tras el piloto.
